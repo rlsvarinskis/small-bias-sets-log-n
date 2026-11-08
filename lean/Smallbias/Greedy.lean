@@ -2,16 +2,18 @@ import Smallbias.Core
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Series
 import Mathlib.Analysis.Convex.SpecificFunctions.Basic
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.DerivHyp
+import Mathlib.Analysis.SpecialFunctions.Complex.Arg
 import Mathlib.Algebra.BigOperators.Fin
 import Mathlib.Data.List.OfFn
 
 /-!
 # The inner set: a deterministic greedy search (Lemma 3)
 
-`greedyList N M δ t s` picks `c₁, …, c_s ∈ [0, N)` one at a time, each minimising the potential
-`Φ(cs) = ∑_{k ∈ grid} ∑_{d < 4} exp (t · ∑_{c ∈ cs} dir_d (e (c · k/M)))` (least index on ties).
-`greedy_inner_bound`: the resulting inner set satisfies, for all `δ ≤ |β| ≤ 1/2`,
-`‖innerSum C β‖ ≤ √2 · (log (4(M+1)) + s (t²/2 + sinh t /(Nδ))) / (t s) + 2πN/M`.
+`greedyList D N M δ t s` picks `c₁, …, c_s ∈ [0, N)` one at a time, each the least minimiser of
+`Φ(cs) = ∑_{k ∈ grid} ∑_{u < D} exp (t · ∑_{c ∈ cs} Re (e(-u/D) · e(c · k/M)))`.
+
+`greedy_inner_bound`: for `D ≥ 3` and all `δ ≤ |β| ≤ 1/2`,
+`‖innerSum C β‖ ≤ (log (D(M+1)) + s (t²/2 + sinh t /(Nδ))) / (t s) / cos(π/D) + 2πN/M`.
 -/
 
 open Finset
@@ -118,6 +120,54 @@ lemma e_neg (x : ℝ) : e (-x) = (starRingEnd ℂ) (e x) := by
   push_cast
   ring
 
+/-! ### Directions -/
+
+/-- Real part of a rotated complex number. -/
+lemma re_e_mul (a : ℝ) (z : ℂ) :
+    (e a * z).re = ‖z‖ * Real.cos (2 * Real.pi * a + Complex.arg z) := by
+  have he : e a = Complex.exp (((2 * Real.pi * a : ℝ) : ℂ) * Complex.I) := by
+    unfold e; congr 1; push_cast; ring
+  rw [Complex.mul_re, he, Complex.exp_ofReal_mul_I_re, Complex.exp_ofReal_mul_I_im,
+    Real.cos_add, ← Complex.norm_mul_cos_arg z, ← Complex.norm_mul_sin_arg z]
+  ring
+
+/-- The rotation by `-u/D` turns. -/
+noncomputable def rot (D u : ℕ) : ℂ := e (-(u : ℝ) / D)
+
+/-- Every complex number is within angle `π/D` of one of the `D` directions. -/
+lemma exists_rot_ge (z : ℂ) {D : ℕ} (hD : 0 < D) :
+    ∃ u < D, ‖z‖ * Real.cos (Real.pi / D) ≤ (rot D u * z).re := by
+  set θ := Complex.arg z
+  set j : ℤ := round (θ * D / (2 * Real.pi))
+  have hDz : (D : ℤ) ≠ 0 := by exact_mod_cast hD.ne'
+  have hDR : (0 : ℝ) < D := by exact_mod_cast hD
+  have hnn : 0 ≤ j % D := Int.emod_nonneg _ hDz
+  have hlt : j % D < D := Int.emod_lt_of_pos _ (by exact_mod_cast hD)
+  refine ⟨(j % D).toNat, by omega, ?_⟩
+  have hu : (((j % D).toNat : ℕ) : ℝ) = j - D * ((j / D : ℤ) : ℝ) := by
+    have h1 : (((j % D).toNat : ℕ) : ℤ) = j - D * (j / D) := by
+      rw [Int.toNat_of_nonneg hnn, Int.emod_def]
+    have h2 := congrArg (fun x : ℤ => (x : ℝ)) h1
+    push_cast at h2
+    exact h2
+  rw [rot, re_e_mul]
+  have hangle : 2 * Real.pi * (-(((j % D).toNat : ℕ) : ℝ) / D) + θ =
+      (θ - 2 * Real.pi * j / D) + ((j / D : ℤ) : ℝ) * (2 * Real.pi) := by
+    rw [hu]; field_simp; ring
+  rw [hangle, Real.cos_add_int_mul_two_pi]
+  have hbound : |θ - 2 * Real.pi * j / D| ≤ Real.pi / D := by
+    have h : θ - 2 * Real.pi * j / D = 2 * Real.pi / D * (θ * D / (2 * Real.pi) - j) := by
+      field_simp
+    rw [h, abs_mul, abs_of_pos (by positivity)]
+    calc 2 * Real.pi / D * |θ * D / (2 * Real.pi) - j| ≤ 2 * Real.pi / D * (1 / 2) := by
+          gcongr; exact abs_sub_round _
+      _ = Real.pi / D := by ring
+  have hcos : Real.cos (Real.pi / D) ≤ Real.cos (θ - 2 * Real.pi * j / D) := by
+    rw [← Real.cos_abs (θ - 2 * Real.pi * j / D)]
+    exact Real.cos_le_cos_of_nonneg_of_le_pi (abs_nonneg _)
+      (div_le_self Real.pi_pos.le (by exact_mod_cast hD)) hbound
+  exact mul_le_mul_of_nonneg_left hcos (norm_nonneg _)
+
 /-! ### Lists as inner sets -/
 
 lemma sum_fin_get {β : Type*} [AddCommMonoid β] (f : ℕ → β) (L : List ℕ) :
@@ -141,6 +191,12 @@ lemma list_sum_map_sub (L : List ℕ) (f g : ℕ → ℂ) :
   | nil => simp
   | cons c cs ih => simp only [List.map_cons, List.sum_cons]; rw [← ih]; ring
 
+lemma re_mul_list_sum (a : ℂ) (L : List ℕ) (f : ℕ → ℂ) :
+    (a * (L.map f).sum).re = (L.map fun c => (a * f c).re).sum := by
+  induction L with
+  | nil => simp
+  | cons c cs ih => simp only [List.map_cons, List.sum_cons, mul_add, Complex.add_re, ih]
+
 /-- The inner set given by a list. -/
 noncomputable def listInner (L : List ℕ) : Fin L.length → ℕ := fun i => L.get i
 
@@ -152,7 +208,8 @@ lemma innerSum_listInner (L : List ℕ) (β : ℝ) :
 lemma norm_innerSum_neg (L : List ℕ) (β : ℝ) :
     ‖innerSum (listInner L) (-β)‖ = ‖innerSum (listInner L) β‖ := by
   rw [innerSum_listInner, innerSum_listInner]
-  have : (L.map fun c : ℕ => e (c * -β)).sum = (starRingEnd ℂ) (L.map fun c : ℕ => e (c * β)).sum := by
+  have : (L.map fun c : ℕ => e (c * -β)).sum =
+      (starRingEnd ℂ) (L.map fun c : ℕ => e (c * β)).sum := by
     rw [map_list_sum, List.map_map]
     congr 1
     apply List.map_congr_left
@@ -161,198 +218,187 @@ lemma norm_innerSum_neg (L : List ℕ) (β : ℝ) :
     congr 1; ring
   rw [this, norm_mul, norm_mul, Complex.norm_conj]
 
-/-! ### Directions, grid, potential -/
+/-! ### Grid, potential, greedy search -/
 
-/-- The four directions `Re, -Re, Im, -Im`. -/
-def dir : Fin 4 → ℂ → ℝ
-  | 0, z => z.re
-  | 1, z => -z.re
-  | 2, z => z.im
-  | 3, z => -z.im
-
-lemma abs_dir_le (d : Fin 4) (z : ℂ) : |dir d z| ≤ ‖z‖ := by
-  fin_cases d <;> simp [dir, Complex.abs_re_le_norm, Complex.abs_im_le_norm]
-
-lemma dir_sum (d : Fin 4) (S : Finset ℕ) (f : ℕ → ℂ) :
-    dir d (∑ c ∈ S, f c) = ∑ c ∈ S, dir d (f c) := by
-  fin_cases d <;> simp [dir, Complex.re_sum, Complex.im_sum]
-
-lemma dir_list_sum (d : Fin 4) (L : List ℕ) (f : ℕ → ℂ) :
-    dir d (L.map f).sum = (L.map fun c => dir d (f c)).sum := by
-  induction L with
-  | nil => fin_cases d <;> simp [dir]
-  | cons c cs ih =>
-      simp only [List.map_cons, List.sum_cons]
-      rw [← ih]
-      fin_cases d <;> simp [dir] <;> ring
-
-lemma dir_real_mul (d : Fin 4) (r : ℝ) (z : ℂ) : dir d ((r : ℂ) * z) = r * dir d z := by
-  fin_cases d <;> simp [dir]
-
-variable (N M : ℕ) (δ t : ℝ)
+variable (D N M : ℕ) (δ t : ℝ)
 
 /-- Grid indices `k` with `δ/2 ≤ k/M ≤ 1/2`. -/
 noncomputable def grid : Finset ℕ :=
   (range (M + 1)).filter fun k => δ / 2 ≤ (k : ℝ) / M ∧ (k : ℝ) / M ≤ 1 / 2
 
-/-- `X k d c = dir_d (e (c · k/M))`. -/
-noncomputable def X (k : ℕ) (d : Fin 4) (c : ℕ) : ℝ := dir d (e (c * ((k : ℝ) / M)))
+/-- `X k u c = Re (e(-u/D) · e(c · k/M))`. -/
+noncomputable def X (k u c : ℕ) : ℝ := (rot D u * e (c * ((k : ℝ) / M))).re
 
 /-- The potential of a partial choice `cs`. -/
 noncomputable def Φ (cs : List ℕ) : ℝ :=
-  ∑ k ∈ grid M δ, ∑ d : Fin 4, Real.exp (t * (cs.map (X M k d)).sum)
+  ∑ k ∈ grid M δ, ∑ u ∈ range D, Real.exp (t * (cs.map (X D M k u)).sum)
 
 open Classical in
 /-- One greedy step: the least minimiser of the potential among `c < N`. -/
 noncomputable def greedyStep (cs : List ℕ) : ℕ :=
-  if h : ∃ c, c < N ∧ ∀ c' < N, Φ M δ t (c :: cs) ≤ Φ M δ t (c' :: cs) then Nat.find h else 0
+  if h : ∃ c, c < N ∧ ∀ c' < N, Φ D M δ t (c :: cs) ≤ Φ D M δ t (c' :: cs) then Nat.find h else 0
 
 /-- The greedy inner set (newest choice first). -/
 noncomputable def greedyList : ℕ → List ℕ
   | 0 => []
-  | i + 1 => greedyStep N M δ t (greedyList i) :: greedyList i
+  | i + 1 => greedyStep D N M δ t (greedyList i) :: greedyList i
 
-lemma greedyList_length (s : ℕ) : (greedyList N M δ t s).length = s := by
+lemma greedyList_length (s : ℕ) : (greedyList D N M δ t s).length = s := by
   induction s with
   | zero => rfl
   | succ i ih => simp [greedyList, ih]
 
 lemma greedyStep_spec (hN : 0 < N) (cs : List ℕ) :
-    greedyStep N M δ t cs < N ∧
-      ∀ c' < N, Φ M δ t (greedyStep N M δ t cs :: cs) ≤ Φ M δ t (c' :: cs) := by
-  have hex : ∃ c, c < N ∧ ∀ c' < N, Φ M δ t (c :: cs) ≤ Φ M δ t (c' :: cs) := by
-    obtain ⟨c, hc, hmin⟩ := (range N).exists_min_image (fun c => Φ M δ t (c :: cs))
+    greedyStep D N M δ t cs < N ∧
+      ∀ c' < N, Φ D M δ t (greedyStep D N M δ t cs :: cs) ≤ Φ D M δ t (c' :: cs) := by
+  have hex : ∃ c, c < N ∧ ∀ c' < N, Φ D M δ t (c :: cs) ≤ Φ D M δ t (c' :: cs) := by
+    obtain ⟨c, hc, hmin⟩ := (range N).exists_min_image (fun c => Φ D M δ t (c :: cs))
       (nonempty_range_iff.mpr hN.ne')
     exact ⟨c, mem_range.mp hc, fun c' hc' => hmin c' (mem_range.mpr hc')⟩
   unfold greedyStep
   split_ifs
   exact Nat.find_spec hex
 
-lemma greedyList_lt (hN : 0 < N) (s : ℕ) : ∀ c ∈ greedyList N M δ t s, c < N := by
+lemma greedyList_lt (hN : 0 < N) (s : ℕ) : ∀ c ∈ greedyList D N M δ t s, c < N := by
   induction s with
   | zero => simp [greedyList]
   | succ i ih =>
       intro c hc
       simp only [greedyList, List.mem_cons] at hc
       rcases hc with rfl | hc
-      · exact (greedyStep_spec N M δ t hN _).1
+      · exact (greedyStep_spec D N M δ t hN _).1
       · exact ih c hc
 
-lemma X_mem (k : ℕ) (d : Fin 4) (c : ℕ) : -1 ≤ X M k d c ∧ X M k d c ≤ 1 := by
-  have h := abs_dir_le d (e (c * ((k : ℝ) / M)))
-  rw [norm_e] at h
+lemma X_mem (k u c : ℕ) : -1 ≤ X D M k u c ∧ X D M k u c ≤ 1 := by
+  have h := Complex.abs_re_le_norm (rot D u * e (c * ((k : ℝ) / M)))
+  rw [norm_mul, rot, norm_e, norm_e, one_mul] at h
   exact abs_le.mp h
 
-/-- Mean bound for every grid direction. -/
-lemma abs_mean_X_le (hN : 0 < N) (hδ : 0 < δ) {k : ℕ} (hk : k ∈ grid M δ)
-    (d : Fin 4) : |(N : ℝ)⁻¹ * ∑ c ∈ range N, X M k d c| ≤ 1 / (N * δ) := by
+/-- Mean bound for every grid point and direction. -/
+lemma abs_mean_X_le (hN : 0 < N) (hδ : 0 < δ) {k : ℕ} (hk : k ∈ grid M δ) (u : ℕ) :
+    |(N : ℝ)⁻¹ * ∑ c ∈ range N, X D M k u c| ≤ 1 / (N * δ) := by
   have hk' := (mem_filter.mp hk).2
   have hγ0 : 0 < (k : ℝ) / M := by linarith [hk'.1]
   have hNR : (0 : ℝ) < N := by exact_mod_cast hN
-  unfold X
-  rw [← dir_sum, abs_mul, abs_inv, Nat.abs_cast]
-  calc (N : ℝ)⁻¹ * |dir d (∑ c ∈ range N, e (c * ((k : ℝ) / M)))|
+  have hsum : ∑ c ∈ range N, X D M k u c =
+      (rot D u * ∑ c ∈ range N, e (c * ((k : ℝ) / M))).re := by
+    rw [mul_sum, Complex.re_sum]; rfl
+  rw [hsum, abs_mul, abs_inv, Nat.abs_cast]
+  calc (N : ℝ)⁻¹ * |(rot D u * ∑ c ∈ range N, e (c * ((k : ℝ) / M))).re|
       ≤ (N : ℝ)⁻¹ * (1 / (2 * ((k : ℝ) / M))) := by
         gcongr
-        exact (abs_dir_le _ _).trans (norm_sum_e_le N hγ0 hk'.2)
+        refine (Complex.abs_re_le_norm _).trans ?_
+        rw [norm_mul, rot, norm_e, one_mul]
+        exact norm_sum_e_le N hγ0 hk'.2
     _ ≤ (N : ℝ)⁻¹ * (1 / δ) := by
         gcongr
         linarith [hk'.1]
     _ = 1 / (N * δ) := by field_simp
 
-/-- One greedy step multiplies the potential by at most `exp D`. -/
+/-- One greedy step multiplies the potential by at most `exp (t²/2 + sinh t /(Nδ))`. -/
 lemma Φ_step (hN : 0 < N) (hδ : 0 < δ) (ht : 0 ≤ t) (cs : List ℕ) :
-    Φ M δ t (greedyStep N M δ t cs :: cs) ≤
-      Φ M δ t cs * Real.exp (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t) := by
+    Φ D M δ t (greedyStep D N M δ t cs :: cs) ≤
+      Φ D M δ t cs * Real.exp (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t) := by
   have hNR : (0 : ℝ) < N := by exact_mod_cast hN
-  set D := t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t
-  -- minimum ≤ average
-  have hmin : Φ M δ t (greedyStep N M δ t cs :: cs) ≤
-      (N : ℝ)⁻¹ * ∑ c ∈ range N, Φ M δ t (c :: cs) := by
+  set E := t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t
+  have hmin : Φ D M δ t (greedyStep D N M δ t cs :: cs) ≤
+      (N : ℝ)⁻¹ * ∑ c ∈ range N, Φ D M δ t (c :: cs) := by
     rw [le_inv_mul_iff₀ hNR]
-    have := (greedyStep_spec N M δ t hN cs).2
-    calc (N : ℝ) * Φ M δ t (greedyStep N M δ t cs :: cs)
-        = ∑ _c ∈ range N, Φ M δ t (greedyStep N M δ t cs :: cs) := by
+    have := (greedyStep_spec D N M δ t hN cs).2
+    calc (N : ℝ) * Φ D M δ t (greedyStep D N M δ t cs :: cs)
+        = ∑ _c ∈ range N, Φ D M δ t (greedyStep D N M δ t cs :: cs) := by
           rw [sum_const, card_range, nsmul_eq_mul]
-      _ ≤ ∑ c ∈ range N, Φ M δ t (c :: cs) :=
+      _ ≤ ∑ c ∈ range N, Φ D M δ t (c :: cs) :=
           sum_le_sum fun c hc => this c (mem_range.mp hc)
-  -- expand the average
-  have hexp : ∀ c, Φ M δ t (c :: cs) = ∑ k ∈ grid M δ, ∑ d : Fin 4,
-      Real.exp (t * (cs.map (X M k d)).sum) * Real.exp (t * X M k d c) := by
+  have hexp : ∀ c, Φ D M δ t (c :: cs) = ∑ k ∈ grid M δ, ∑ u ∈ range D,
+      Real.exp (t * (cs.map (X D M k u)).sum) * Real.exp (t * X D M k u c) := by
     intro c
     unfold Φ
-    refine sum_congr rfl fun k _ => sum_congr rfl fun d _ => ?_
+    refine sum_congr rfl fun k _ => sum_congr rfl fun u _ => ?_
     rw [← Real.exp_add]
     congr 1
     simp only [List.map_cons, List.sum_cons]
     ring
-  have havg : (N : ℝ)⁻¹ * ∑ c ∈ range N, Φ M δ t (c :: cs) ≤ Φ M δ t cs * Real.exp D := by
+  have havg : (N : ℝ)⁻¹ * ∑ c ∈ range N, Φ D M δ t (c :: cs) ≤ Φ D M δ t cs * Real.exp E := by
     simp_rw [hexp]
     rw [sum_comm, mul_sum]
     unfold Φ
     rw [sum_mul]
     refine sum_le_sum fun k hk => ?_
     rw [sum_comm, mul_sum, sum_mul]
-    refine sum_le_sum fun d _ => ?_
+    refine sum_le_sum fun u _ => ?_
     rw [← mul_sum, ← mul_assoc, mul_comm (N : ℝ)⁻¹, mul_assoc]
     gcongr
-    exact avg_exp_le hN (X M k d) (X_mem M k d) ht (abs_mean_X_le N M δ hN hδ hk d)
+    exact avg_exp_le hN (X D M k u) (X_mem D M k u) ht (abs_mean_X_le D N M δ hN hδ hk u)
   exact hmin.trans havg
 
-lemma Φ_nil : Φ M δ t [] = 4 * (grid M δ).card := by
+lemma Φ_nil : Φ D M δ t [] = D * (grid M δ).card := by
   simp [Φ, mul_comm]
 
 lemma Φ_greedy_le (hN : 0 < N) (hδ : 0 < δ) (ht : 0 ≤ t) (s : ℕ) :
-    Φ M δ t (greedyList N M δ t s) ≤
-      4 * (grid M δ).card * Real.exp (s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) := by
+    Φ D M δ t (greedyList D N M δ t s) ≤
+      D * (grid M δ).card * Real.exp (s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) := by
   induction s with
   | zero => simp [greedyList, Φ_nil]
   | succ i ih =>
-      calc Φ M δ t (greedyList N M δ t (i + 1))
-          ≤ Φ M δ t (greedyList N M δ t i) *
-              Real.exp (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t) := Φ_step N M δ t hN hδ ht _
-        _ ≤ 4 * (grid M δ).card * Real.exp (i * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) *
+      calc Φ D M δ t (greedyList D N M δ t (i + 1))
+          ≤ Φ D M δ t (greedyList D N M δ t i) *
+              Real.exp (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t) := Φ_step D N M δ t hN hδ ht _
+        _ ≤ D * (grid M δ).card * Real.exp (i * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) *
               Real.exp (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t) := by gcongr
         _ = _ := by rw [mul_assoc, ← Real.exp_add]; push_cast; ring_nf
 
-/-- On the grid, every direction of the inner sum is small. -/
-lemma dir_sum_le_on_grid (hN : 0 < N) (hδ : 0 < δ) (ht : 0 < t) (s : ℕ)
-    {k : ℕ} (hk : k ∈ grid M δ) (d : Fin 4) :
-    ((greedyList N M δ t s).map (X M k d)).sum ≤
-      (Real.log (4 * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / t := by
-  set L := greedyList N M δ t s
-  set D := t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t
-  have hsingle : Real.exp (t * (L.map (X M k d)).sum) ≤ Φ M δ t L := by
+/-- On the grid, every direction sum is small. -/
+lemma dir_sum_le_on_grid (hD : 0 < D) (hN : 0 < N) (hδ : 0 < δ) (ht : 0 < t) (s : ℕ)
+    {k : ℕ} (hk : k ∈ grid M δ) {u : ℕ} (hu : u < D) :
+    ((greedyList D N M δ t s).map (X D M k u)).sum ≤
+      (Real.log (D * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / t := by
+  set L := greedyList D N M δ t s
+  set E := t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t
+  have hsingle : Real.exp (t * (L.map (X D M k u)).sum) ≤ Φ D M δ t L := by
     unfold Φ
-    calc Real.exp (t * (L.map (X M k d)).sum)
-        ≤ ∑ d' : Fin 4, Real.exp (t * (L.map (X M k d')).sum) :=
-          single_le_sum (f := fun d' => Real.exp (t * (L.map (X M k d')).sum))
-            (fun _ _ => (Real.exp_pos _).le) (mem_univ d)
-      _ ≤ ∑ k' ∈ grid M δ, ∑ d' : Fin 4, Real.exp (t * (L.map (X M k' d')).sum) :=
-          single_le_sum (f := fun k' => ∑ d' : Fin 4, Real.exp (t * (L.map (X M k' d')).sum))
+    calc Real.exp (t * (L.map (X D M k u)).sum)
+        ≤ ∑ u' ∈ range D, Real.exp (t * (L.map (X D M k u')).sum) :=
+          single_le_sum (f := fun u' => Real.exp (t * (L.map (X D M k u')).sum))
+            (fun _ _ => (Real.exp_pos _).le) (mem_range.mpr hu)
+      _ ≤ ∑ k' ∈ grid M δ, ∑ u' ∈ range D, Real.exp (t * (L.map (X D M k' u')).sum) :=
+          single_le_sum (f := fun k' => ∑ u' ∈ range D, Real.exp (t * (L.map (X D M k' u')).sum))
             (fun _ _ => sum_nonneg fun _ _ => (Real.exp_pos _).le) hk
   have hcard : ((grid M δ).card : ℝ) ≤ M + 1 := by
     have := card_filter_le (range (M + 1)) fun k => δ / 2 ≤ (k : ℝ) / M ∧ (k : ℝ) / M ≤ 1 / 2
     rw [card_range] at this
     exact_mod_cast this
-  have hbound := (hsingle.trans (Φ_greedy_le N M δ t hN hδ ht.le s)).trans
-    (by gcongr : 4 * ((grid M δ).card : ℝ) * Real.exp (s * D) ≤ 4 * (M + 1) * Real.exp (s * D))
+  have hDR : (0 : ℝ) < D := by exact_mod_cast hD
+  have hbound := (hsingle.trans (Φ_greedy_le D N M δ t hN hδ ht.le s)).trans
+    (by gcongr : (D : ℝ) * ((grid M δ).card : ℝ) * Real.exp (s * E) ≤
+      D * (M + 1) * Real.exp (s * E))
   have hlog := Real.log_le_log (Real.exp_pos _) hbound
   rw [Real.log_exp, Real.log_mul (by positivity) (Real.exp_pos _).ne', Real.log_exp] at hlog
   rw [le_div_iff₀ ht]
   linarith
 
 /-- **Lemma 3** (the greedy inner set is balanced on `δ ≤ |β| ≤ 1/2`). -/
-theorem greedy_inner_bound (hN : 0 < N) (hM : 0 < M) (hδ : 0 < δ) (hMδ : 2 ≤ M * δ) (ht : 0 < t)
-    (s : ℕ) (hs : 0 < s) (β : ℝ) (hβ1 : δ ≤ |β|) (hβ2 : |β| ≤ 1 / 2) :
-    ‖innerSum (listInner (greedyList N M δ t s)) β‖ ≤
-      √2 * ((Real.log (4 * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / (t * s)) +
-        2 * Real.pi * N / M := by
-  set L := greedyList N M δ t s with hL
-  set A := (Real.log (4 * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / (t * s)
-  have hlen : L.length = s := greedyList_length N M δ t s
+theorem greedy_inner_bound (hD : 3 ≤ D) (hN : 0 < N) (hM : 0 < M) (hδ : 0 < δ)
+    (hMδ : 2 ≤ M * δ) (ht : 0 < t) (s : ℕ) (hs : 0 < s) (β : ℝ) (hβ1 : δ ≤ |β|)
+    (hβ2 : |β| ≤ 1 / 2) :
+    ‖innerSum (listInner (greedyList D N M δ t s)) β‖ ≤
+      (Real.log (D * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / (t * s) /
+        Real.cos (Real.pi / D) + 2 * Real.pi * N / M := by
+  set L := greedyList D N M δ t s with hL
+  set A := (Real.log (D * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / (t * s)
+  have hlen : L.length = s := greedyList_length D N M δ t s
   have hsR : (0 : ℝ) < s := by exact_mod_cast hs
   have hMR : (0 : ℝ) < M := by exact_mod_cast hM
+  have hD0 : 0 < D := by omega
+  have hcos : 0 < Real.cos (Real.pi / D) := by
+    apply Real.cos_pos_of_mem_Ioo
+    constructor
+    · have hDR' : (0 : ℝ) < D := by exact_mod_cast hD0
+      have : 0 < Real.pi / D := div_pos Real.pi_pos hDR'
+      linarith [Real.pi_pos]
+    · rw [div_lt_iff₀ (by exact_mod_cast hD0)]
+      have : (3 : ℝ) ≤ D := by exact_mod_cast hD
+      nlinarith [Real.pi_pos]
   -- reduce to β ≥ 0
   wlog hβ0 : 0 ≤ β generalizing β
   · have h := this (-β) (by rwa [abs_neg]) (by rwa [abs_neg]) (by linarith)
@@ -375,26 +421,23 @@ theorem greedy_inner_bound (hN : 0 < N) (hM : 0 < M) (hδ : 0 < δ) (hMδ : 2 �
     have hM1 : 0 < 1 / (M : ℝ) := by positivity
     rw [abs_le]
     constructor <;> linarith
-  -- grid bound: |Re|, |Im| ≤ A
-  have hgrid : ∀ d : Fin 4, dir d (innerSum (listInner L) ((k : ℝ) / M)) ≤ A := by
-    intro d
-    rw [innerSum_listInner, hlen,
-      show ((s : ℂ)⁻¹) = (((s : ℝ)⁻¹ : ℝ) : ℂ) by push_cast; rfl, dir_real_mul, dir_list_sum]
-    have h := dir_sum_le_on_grid N M δ t hN hδ ht s hkgrid d
+  -- on the grid: every rotated real part is at most A, hence the norm is at most A / cos(π/D)
+  have hrot : ∀ u < D, (rot D u * innerSum (listInner L) ((k : ℝ) / M)).re ≤ A := by
+    intro u hu
+    rw [innerSum_listInner, hlen, mul_left_comm,
+      show ((s : ℂ)⁻¹) = (((s : ℝ)⁻¹ : ℝ) : ℂ) by push_cast; rfl, Complex.re_ofReal_mul,
+      re_mul_list_sum]
+    have h := dir_sum_le_on_grid D N M δ t hD0 hN hδ ht s hkgrid hu
     unfold X at h
     rw [← hL] at h
     rw [inv_mul_le_iff₀ hsR, show (s : ℝ) * A =
-      (Real.log (4 * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / t by
+      (Real.log (D * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * δ) * Real.sinh t)) / t by
         simp only [A]; field_simp]
     exact h
-  have hnorm_grid : ‖innerSum (listInner L) ((k : ℝ) / M)‖ ≤ √2 * A := by
-    refine (Complex.norm_le_sqrt_two_mul_max _).trans ?_
-    gcongr
-    refine max_le (abs_le.mpr ⟨?_, ?_⟩) (abs_le.mpr ⟨?_, ?_⟩)
-    · have := hgrid 1; simp only [dir] at this; linarith
-    · exact hgrid 0
-    · have := hgrid 3; simp only [dir] at this; linarith
-    · exact hgrid 2
+  have hnorm_grid : ‖innerSum (listInner L) ((k : ℝ) / M)‖ ≤ A / Real.cos (Real.pi / D) := by
+    obtain ⟨u, hu, hge⟩ := exists_rot_ge (innerSum (listInner L) ((k : ℝ) / M)) hD0
+    rw [le_div_iff₀ hcos]
+    exact hge.trans (hrot u hu)
   -- Lipschitz step
   have hlip : ‖innerSum (listInner L) β - innerSum (listInner L) ((k : ℝ) / M)‖ ≤
       2 * Real.pi * N / M := by
@@ -402,7 +445,7 @@ theorem greedy_inner_bound (hN : 0 < N) (hM : 0 < M) (hδ : 0 < δ) (hMδ : 2 �
       norm_inv, Complex.norm_natCast, inv_mul_le_iff₀ hsR]
     have hterm : ∀ c ∈ L, ‖e (c * β) - e (c * ((k : ℝ) / M))‖ ≤ 2 * Real.pi * N / M := by
       intro c hc
-      have hcN : (c : ℝ) ≤ N := by exact_mod_cast (greedyList_lt N M δ t hN s c hc).le
+      have hcN : (c : ℝ) ≤ N := by exact_mod_cast (greedyList_lt D N M δ t hN s c hc).le
       calc ‖e (c * β) - e (c * ((k : ℝ) / M))‖ ≤ 2 * Real.pi * |c * β - c * ((k : ℝ) / M)| :=
             norm_e_sub_e_le _ _
         _ = 2 * Real.pi * c * |β - (k : ℝ) / M| := by
@@ -410,8 +453,8 @@ theorem greedy_inner_bound (hN : 0 < N) (hM : 0 < M) (hδ : 0 < δ) (hMδ : 2 �
         _ ≤ 2 * Real.pi * N * (1 / M) := by gcongr
         _ = 2 * Real.pi * N / M := by ring
     calc ‖(L.map fun c : ℕ => e (c * β) - e (c * ((k : ℝ) / M))).sum‖
-        ≤ (L.map fun c : ℕ => ‖e (c * β) - e (c * ((k : ℝ) / M))‖).sum := by
-          exact norm_list_sum_map_le L _
+        ≤ (L.map fun c : ℕ => ‖e (c * β) - e (c * ((k : ℝ) / M))‖).sum :=
+          norm_list_sum_map_le L _
       _ ≤ (L.map fun _ => 2 * Real.pi * N / M).sum := List.sum_le_sum fun c hc => hterm c hc
       _ = s * (2 * Real.pi * N / M) := by
           rw [List.map_const', List.sum_replicate, hlen, nsmul_eq_mul]
@@ -421,6 +464,6 @@ theorem greedy_inner_bound (hN : 0 < N) (hM : 0 < M) (hδ : 0 < δ) (hMδ : 2 �
         have := norm_add_le (innerSum (listInner L) ((k : ℝ) / M))
           (innerSum (listInner L) β - innerSum (listInner L) ((k : ℝ) / M))
         rwa [add_sub_cancel] at this
-    _ ≤ √2 * A + 2 * Real.pi * N / M := add_le_add hnorm_grid hlip
+    _ ≤ A / Real.cos (Real.pi / D) + 2 * Real.pi * N / M := add_le_add hnorm_grid hlip
 
 end SmallBias

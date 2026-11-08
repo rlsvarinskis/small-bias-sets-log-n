@@ -2,48 +2,60 @@ import Smallbias.Greedy
 import Mathlib.NumberTheory.Chebyshev
 import Mathlib.Analysis.Complex.ExponentialBounds
 import Mathlib.Analysis.Real.Pi.Bounds
+import Mathlib.Data.Finset.Sort
 
 /-!
 # The construction and the main theorem
 
-Parameters (for `n ≥ 2`, `0 < ε ≤ 1`):
-* `Q = ⌈20 log n / ε⌉ + 2^15 = ⌈20 log n / ε⌉ + 32768`, `r = ⌊√Q⌋`, primes `P = {q ∈ (r, Q] prime, coprime to n}`;
-* inner set: `greedyList N M δ t s` with `δ = 1/(2Q)`, `N = ⌈48Q/ε⌉`, `M = ⌈51N/ε⌉`, `t = ε/8`,
-  `s = ⌈128 log(4(M+1)) / ε²⌉`;
-* `S = { c · q⁻¹ mod n : q ∈ P, c ∈ inner set }`.
+For `n ≥ 2` and `0 < ε ≤ 1`:
+* `R = ⌈4 log n / ε⌉ + 16`, `K = ⌊log_{R+1}(n/2)⌋`, `k = ⌊3K/ε⌋ + 1`;
+* `P` = the `k` smallest primes in `(R, R²]` that do not divide `n`, and `Q = max P`;
+* inner list `C = greedyList 16 N M δ t s` with `δ = 1/(2Q)`, `N = ⌈300Q/ε⌉`, `M = ⌈1000N/ε⌉`,
+  `t = 5ε/8`, `s = ⌈2 log(16(M+1)) / t²⌉`;
+* `S = { c · q⁻¹ mod n : q ∈ P, c ∈ C }`, so `|S| = k · s`.
 
-`main_bias`: every nontrivial normalised character sum of `S` has norm `≤ ε`.
-`main_size`: `|S| ≤ 1625 · (20 log n / ε + 32769) / ε²`, i.e. `O(log n / ε³)`.
+`main_bias`: every nontrivial character sum of `S` has norm `≤ ε`
+(at most `ε/3` from bad primes and `2ε/3` from the inner list).
+`main_size_exact`: `|S| = k · s`.  `main_size`: `|S| ≤ 235 (log n + 2) / ε³`.
+`explicitList_spec`: the statement for a plain list of integers, using only `Complex.exp`.
 -/
 
 open Finset
 
 namespace SmallBias
 
-/-! ### Parameters -/
+/-! ### Parameters and the construction -/
 
-noncomputable def Qpar (n : ℕ) (ε : ℝ) : ℕ := ⌈20 * Real.log n / ε⌉₊ + 32768
-noncomputable def Npar (Q : ℕ) (ε : ℝ) : ℕ := ⌈48 * Q / ε⌉₊
-noncomputable def Mpar (N : ℕ) (ε : ℝ) : ℕ := ⌈51 * N / ε⌉₊
-noncomputable def spar (M : ℕ) (ε : ℝ) : ℕ := ⌈128 * Real.log (4 * (M + 1)) / ε ^ 2⌉₊
+noncomputable def Rpar (n : ℕ) (ε : ℝ) : ℕ := ⌈4 * Real.log n / ε⌉₊ + 16
+noncomputable def kpar (n : ℕ) (ε : ℝ) : ℕ :=
+  ⌊3 * (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) / ε⌋₊ + 1
 
-/-- The primes `q ∈ (⌊√Q⌋, Q]` coprime to `n`. -/
-def primeSet (n Q : ℕ) : Finset ℕ := (Ioc (Nat.sqrt Q) Q).filter fun q => q.Prime ∧ q.Coprime n
+/-- Candidate primes: `q ∈ (R, R²]`, prime, not dividing `n`. -/
+def candidates (n R : ℕ) : Finset ℕ := (Ioc R (R ^ 2)).filter fun q => q.Prime ∧ q.Coprime n
 
-/-- The inner set (a list, newest choice first). -/
+/-- The `k` smallest candidates. -/
+noncomputable def primeSet (n : ℕ) (ε : ℝ) : Finset ℕ :=
+  (((candidates n (Rpar n ε)).sort (· ≤ ·)).take (kpar n ε)).toFinset
+
+noncomputable def Qpar (n : ℕ) (ε : ℝ) : ℕ := (primeSet n ε).sup id
+noncomputable def Npar (Q : ℕ) (ε : ℝ) : ℕ := ⌈300 * Q / ε⌉₊
+noncomputable def Mpar (N : ℕ) (ε : ℝ) : ℕ := ⌈1000 * N / ε⌉₊
+noncomputable def spar (M : ℕ) (ε : ℝ) : ℕ := ⌈2 * Real.log (16 * (M + 1)) / (5 * ε / 8) ^ 2⌉₊
+
+/-- The inner list (newest choice first). -/
 noncomputable def innerList (n : ℕ) (ε : ℝ) : List ℕ :=
-  greedyList (Npar (Qpar n ε) ε) (Mpar (Npar (Qpar n ε) ε) ε) (1 / (2 * (Qpar n ε : ℝ))) (ε / 8)
-    (spar (Mpar (Npar (Qpar n ε) ε) ε) ε)
+  greedyList 16 (Npar (Qpar n ε) ε) (Mpar (Npar (Qpar n ε) ε) ε) (1 / (2 * (Qpar n ε : ℝ)))
+    (5 * ε / 8) (spar (Mpar (Npar (Qpar n ε) ε) ε) ε)
 
 /-- Index set of `S`. -/
 noncomputable def indexSet (n : ℕ) (ε : ℝ) : Finset (ℕ × Fin (innerList n ε).length) :=
-  primeSet n (Qpar n ε) ×ˢ univ
+  primeSet n ε ×ˢ univ
 
 /-- The elements of `S`: `(q, i) ↦ c_i · q⁻¹`. -/
 noncomputable def element (n : ℕ) (ε : ℝ) : ℕ × Fin (innerList n ε).length → ZMod n :=
   fracSet (listInner (innerList n ε))
 
-/-! ### Real-number facts -/
+/-! ### Elementary facts -/
 
 lemma sinh_le_three_halves {t : ℝ} (h0 : 0 ≤ t) (h1 : t ≤ 1) : Real.sinh t ≤ 3 / 2 * t := by
   have hconv := convexOn_exp.2 (Set.mem_univ 0) (Set.mem_univ 1) (by linarith : 0 ≤ 1 - t) h0
@@ -54,35 +66,55 @@ lemma sinh_le_three_halves {t : ℝ} (h0 : 0 ≤ t) (h1 : t ≤ 1) : Real.sinh t
   rw [Real.sinh_eq]
   nlinarith
 
-/-- `(√Q + 2) log Q ≤ 0.393 Q` for `Q ≥ 13⁴`. -/
-lemma sqrt_add_two_mul_log_le {Q : ℝ} (hQ : 28561 ≤ Q) : (√Q + 2) * Real.log Q ≤ 0.393 * Q := by
-  have hQ0 : 0 ≤ Q := by linarith
-  set w := √(√Q) with hw
-  have hsq : √Q = w ^ 2 := by rw [hw, Real.sq_sqrt (Real.sqrt_nonneg _)]
-  have hQw : Q = w ^ 4 := by
-    rw [show w ^ 4 = (w ^ 2) ^ 2 by ring, ← hsq, Real.sq_sqrt hQ0]
-  have hw0 : 0 < w := by
-    rw [hw]; apply Real.sqrt_pos.mpr; apply Real.sqrt_pos.mpr; linarith
-  have hw13 : 13 ≤ w := by
-    by_contra h
-    push Not at h
-    have : w ^ 4 < 13 ^ 4 := by gcongr
-    linarith
-  have hlog : Real.log Q ≤ 4 * w := by
-    rw [hQw, Real.log_pow]
-    have := Real.log_le_sub_one_of_pos hw0
-    push_cast
-    linarith
-  rw [hsq, hQw]
-  have h1 : (w ^ 2 + 2) * Real.log (w ^ 4) ≤ (w ^ 2 + 2) * (4 * w) := by
-    rw [← hQw]; gcongr
-  nlinarith [h1, mul_pos hw0 hw0]
+lemma pow_four_le_two_pow {R : ℕ} (h : 16 ≤ R) : R ^ 4 ≤ 2 ^ R := by
+  induction R, h using Nat.le_induction with
+  | base => norm_num
+  | succ m hm ih =>
+      have h1 : 16 * m ^ 3 ≤ m ^ 4 := by
+        calc 16 * m ^ 3 ≤ m * m ^ 3 := Nat.mul_le_mul_right _ hm
+          _ = m ^ 4 := by ring
+      have h2 : 16 * m ^ 2 ≤ m ^ 3 := by
+        calc 16 * m ^ 2 ≤ m * m ^ 2 := Nat.mul_le_mul_right _ hm
+          _ = m ^ 3 := by ring
+      have h3 : 16 * m ≤ m ^ 2 := by
+        calc 16 * m ≤ m * m := Nat.mul_le_mul_right _ hm
+          _ = m ^ 2 := by ring
+      have h4 : (m + 1) ^ 4 ≤ 2 * m ^ 4 := by nlinarith
+      calc (m + 1) ^ 4 ≤ 2 * m ^ 4 := h4
+        _ ≤ 2 * 2 ^ m := Nat.mul_le_mul_left 2 ih
+        _ = 2 ^ (m + 1) := by ring
 
-/-! ### The primes -/
+lemma four_log_le {R : ℕ} (h : 16 ≤ R) : 4 * Real.log R ≤ R * Real.log 2 := by
+  have h1 : (R : ℝ) ^ 4 ≤ (2 : ℝ) ^ R := by exact_mod_cast pow_four_le_two_pow h
+  have hR : (0 : ℝ) < R := by exact_mod_cast (by omega : 0 < R)
+  have := Real.log_le_log (by positivity) h1
+  rw [Real.log_pow, Real.log_pow] at this
+  push_cast at this
+  linarith
 
-lemma card_dvd_primes_le {n : ℕ} (hn : n ≠ 0) {r : ℕ} (hr : 1 ≤ r) (Q : ℕ) :
-    ((Ioc r Q).filter fun q => q.Prime ∧ q ∣ n).card ≤ Nat.log (r + 1) n := by
-  set D := (Ioc r Q).filter fun q => q.Prime ∧ q ∣ n
+lemma log_le_div_exp_one {x : ℝ} (hx : 0 < x) : Real.log x ≤ x / Real.exp 1 := by
+  have h := Real.log_le_sub_one_of_pos (div_pos hx (Real.exp_pos 1))
+  rw [Real.log_div hx.ne' (Real.exp_pos 1).ne', Real.log_exp] at h
+  linarith
+
+lemma log_sixteen : Real.log (16 : ℝ) = 4 * Real.log 2 := by
+  rw [show (16 : ℝ) = 2 ^ 4 by norm_num, Real.log_pow]; push_cast; ring
+
+/-- `L · log (R+1) ≤ log n` where `L = ⌊log_{R+1} n⌋`. -/
+lemma log_count_le {n R : ℕ} (hn : n ≠ 0) :
+    (Nat.log (R + 1) n : ℝ) * Real.log (R + 1) ≤ Real.log n := by
+  have hp : (R + 1) ^ Nat.log (R + 1) n ≤ n := Nat.pow_log_le_self (R + 1) hn
+  have : Real.log (((R + 1) ^ Nat.log (R + 1) n : ℕ) : ℝ) ≤ Real.log n :=
+    Real.log_le_log (by positivity) (by exact_mod_cast hp)
+  push_cast at this
+  rwa [Real.log_pow] at this
+
+/-! ### Enough candidate primes -/
+
+/-- At most `⌊log_{r+1} n⌋` primes larger than `r` divide `n`. -/
+lemma card_dvd_primes_le {n : ℕ} (hn : n ≠ 0) {r : ℕ} (hr : 1 ≤ r) (X : ℕ) :
+    ((Ioc r X).filter fun q => q.Prime ∧ q ∣ n).card ≤ Nat.log (r + 1) n := by
+  set D := (Ioc r X).filter fun q => q.Prime ∧ q ∣ n
   have hprod : ∏ q ∈ D, q ∣ n := by
     apply Finset.prod_primes_dvd
     · intro q hq; exact Nat.prime_iff.mp (mem_filter.mp hq).2.1
@@ -93,186 +125,229 @@ lemma card_dvd_primes_le {n : ℕ} (hn : n ≠ 0) {r : ℕ} (hr : 1 ≤ r) (Q : 
     exact (mem_Ioc.mp (mem_filter.mp hq).1).1
   exact (Nat.le_log_iff_pow_le (by omega) hn).mpr hpow
 
-lemma primeSet_card_ge {n : ℕ} (hn : n ≠ 0) {Q : ℕ} (hr : 1 ≤ Nat.sqrt Q) :
-    (Nat.primeCounting Q : ℝ) ≤ (primeSet n Q).card + (Nat.sqrt Q + 1) + Nat.log (Nat.sqrt Q + 1) n := by
-  set r := Nat.sqrt Q
-  set D := (Ioc r Q).filter fun q => q.Prime ∧ q ∣ n
-  have hsub : Nat.primesLE Q ⊆ range (r + 1) ∪ (primeSet n Q ∪ D) := by
+/-- There are at least `R - 1 - ⌊log_{R+1} n⌋` candidates (Chebyshev: `π(R²) ≥ 2R`). -/
+lemma card_candidates_ge {n R : ℕ} (hn : n ≠ 0) (hR : 16 ≤ R) :
+    (R : ℝ) - 1 - Nat.log (R + 1) n ≤ (candidates n R).card := by
+  set D := (Ioc R (R ^ 2)).filter fun q => q.Prime ∧ q ∣ n
+  have hsub : Nat.primesLE (R ^ 2) ⊆ range (R + 1) ∪ (candidates n R ∪ D) := by
     intro p hp
     have hpp : p.Prime := Nat.prime_of_mem_primesLE hp
-    have hpQ : p ≤ Q := Nat.le_of_mem_primesLE hp
-    simp only [mem_union, mem_range, primeSet, mem_filter, mem_Ioc, D]
-    by_cases hpr : p ≤ r
+    have hpQ : p ≤ R ^ 2 := Nat.le_of_mem_primesLE hp
+    simp only [mem_union, mem_range, candidates, mem_filter, mem_Ioc, D]
+    by_cases hpr : p ≤ R
     · left; omega
     · right
       push Not at hpr
       by_cases hc : p.Coprime n
       · left; exact ⟨⟨hpr, hpQ⟩, hpp, hc⟩
       · right; exact ⟨⟨hpr, hpQ⟩, hpp, (Nat.Prime.dvd_iff_not_coprime hpp).mpr hc⟩
-  have hcard : (Nat.primesLE Q).card ≤ (range (r + 1)).card + ((primeSet n Q).card + D.card) :=
+  have hcard : (Nat.primesLE (R ^ 2)).card ≤
+      (range (R + 1)).card + ((candidates n R).card + D.card) :=
     (card_le_card hsub).trans ((card_union_le _ _).trans
       (Nat.add_le_add_left (card_union_le _ _) _))
   rw [Nat.primesLE_card_eq_primeCounting, card_range] at hcard
-  have hD : D.card ≤ Nat.log (r + 1) n := card_dvd_primes_le hn hr Q
-  have : (Nat.primeCounting Q) ≤ (primeSet n Q).card + (r + 1) + Nat.log (r + 1) n := by omega
-  exact_mod_cast this
+  have hD : D.card ≤ Nat.log (R + 1) n := card_dvd_primes_le hn (by omega) (R ^ 2)
+  have hpi := Chebyshev.pi_ge_of_four_le (n := R ^ 2) (by nlinarith)
+  push_cast at hpi
+  have hRR : (16 : ℝ) ≤ R := by exact_mod_cast hR
+  have hlogR : 0 < Real.log R := Real.log_pos (by linarith)
+  have h4 := four_log_le hR
+  have hpi2 : 2 * (R : ℝ) ≤ Nat.primeCounting (R ^ 2) := by
+    refine le_trans ?_ hpi
+    rw [Real.log_pow, le_div_iff₀ (by push_cast; positivity)]
+    push_cast
+    nlinarith [mul_le_mul_of_nonneg_left h4 (by positivity : (0 : ℝ) ≤ R)]
+  have h1 : (Nat.primeCounting (R ^ 2) : ℝ) ≤ (R + 1) + ((candidates n R).card + D.card) := by
+    exact_mod_cast hcard
+  have hD' : (D.card : ℝ) ≤ Nat.log (R + 1) n := by exact_mod_cast hD
+  linarith
 
-/-- The key prime-counting estimate: `|P| ≥ 1` and `K ≤ (ε/2)|P|`. -/
-lemma primeSet_good (n : ℕ) (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
-    (primeSet n (Qpar n ε)).Nonempty ∧
-      (Nat.log (Nat.sqrt (Qpar n ε) + 1) (n / 2) : ℝ) ≤ ε / 2 * (primeSet n (Qpar n ε)).card := by
+lemma Rpar_ge (n : ℕ) (ε : ℝ) : 16 ≤ Rpar n ε := Nat.le_add_left _ _
+
+lemma Rpar_lo (n : ℕ) (ε : ℝ) : 4 * Real.log n / ε + 16 ≤ Rpar n ε := by
+  have := Nat.le_ceil (4 * Real.log n / ε)
+  unfold Rpar; push_cast; linarith
+
+lemma Rpar_hi {n : ℕ} (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) :
+    (Rpar n ε : ℝ) ≤ 4 * Real.log n / ε + 17 := by
+  have hlogn : 0 ≤ Real.log n := Real.log_nonneg (by exact_mod_cast (by omega : 1 ≤ n))
+  have := Nat.ceil_lt_add_one (div_nonneg (by linarith : 0 ≤ 4 * Real.log n) hε0.le)
+  unfold Rpar; push_cast; linarith
+
+/-- `k ≤ 3 log n / (ε log R) + 1`. -/
+lemma kpar_le {n : ℕ} (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) :
+    (kpar n ε : ℝ) ≤ 3 * Real.log n / (ε * Real.log (Rpar n ε)) + 1 := by
+  have hR16 : (16 : ℝ) ≤ Rpar n ε := by exact_mod_cast Rpar_ge n ε
+  have hlogR : 0 < Real.log (Rpar n ε) := Real.log_pos (by linarith)
+  have hfl := Nat.floor_le (div_nonneg (by positivity :
+    (0 : ℝ) ≤ 3 * (Nat.log (Rpar n ε + 1) (n / 2) : ℝ)) hε0.le)
+  have hKL : (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) ≤ Nat.log (Rpar n ε + 1) n := by
+    exact_mod_cast Nat.log_mono_right (Nat.div_le_self n 2)
+  have hL := log_count_le (n := n) (R := Rpar n ε) (by omega)
+  have hlogR1 : Real.log (Rpar n ε) ≤ Real.log ((Rpar n ε : ℝ) + 1) :=
+    Real.log_le_log (by linarith) (by linarith)
+  have hK0 : (0 : ℝ) ≤ Nat.log (Rpar n ε + 1) (n / 2) := by positivity
+  have hKb : (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) * Real.log (Rpar n ε) ≤ Real.log n := by
+    have hlog0 : 0 ≤ Real.log ((Rpar n ε : ℝ) + 1) := by linarith
+    nlinarith [mul_le_mul_of_nonneg_left hlogR1 hK0, mul_le_mul_of_nonneg_right hKL hlog0]
+  have h3 : 3 * (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) / ε ≤
+      3 * Real.log n / (ε * Real.log (Rpar n ε)) := by
+    rw [div_le_div_iff₀ hε0 (by positivity)]
+    nlinarith
+  unfold kpar
+  push_cast
+  linarith
+
+/-- There are at least `k` candidates. -/
+lemma kpar_le_card {n : ℕ} (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
+    kpar n ε ≤ (candidates n (Rpar n ε)).card := by
   have hn0 : n ≠ 0 := by omega
-  have hQ0 : 32768 ≤ Qpar n ε := Nat.le_add_left _ _
-  have hQ1 : 20 * Real.log n / ε ≤ (Qpar n ε : ℝ) := by
-    have := Nat.le_ceil (20 * Real.log n / ε)
-    unfold Qpar; push_cast; linarith
-  generalize Qpar n ε = Q at *
-  have hQR : (32768 : ℝ) ≤ Q := by exact_mod_cast hQ0
-  have hlogn : 0 < Real.log n := Real.log_pos (by exact_mod_cast (by omega : 1 < n))
-  have hr_sq : Nat.sqrt Q * Nat.sqrt Q ≤ Q := Nat.sqrt_le Q
-  have hQ_lt : Q < (Nat.sqrt Q + 1) * (Nat.sqrt Q + 1) := Nat.lt_succ_sqrt Q
-  have hr1' : 1 ≤ Nat.sqrt Q := Nat.le_sqrt.mpr (by omega)
-  have hcount := primeSet_card_ge hn0 (Q := Q) hr1'
-  generalize Nat.sqrt Q = r at *
-  set L := Nat.log (r + 1) n with hLdef
-  -- log n ≤ ε Q / 20
-  have hlogQ : Real.log n ≤ ε * Q / 20 := by
-    rw [div_le_iff₀ hε0] at hQ1; linarith
-  -- r and Q
-  have hrR : (r : ℝ) ≤ √(Q : ℝ) := by
-    rw [Real.le_sqrt (by positivity) (by positivity)]
-    have : ((r * r : ℕ) : ℝ) ≤ Q := by exact_mod_cast hr_sq
-    push_cast at this; nlinarith
-  have hr1 : 2 ≤ r + 1 := by omega
-  have hQpos : (0 : ℝ) < Q := by linarith
-  have hlogQpos : 0 < Real.log Q := Real.log_pos (by linarith)
-  -- log(r+1) ≥ log Q / 2
-  have hlogr : Real.log Q / 2 ≤ Real.log (r + 1) := by
-    have h : (Q : ℝ) < (r + 1) ^ 2 := by
-      have : ((Q : ℕ) : ℝ) < ((r + 1) * (r + 1) : ℕ) := by exact_mod_cast hQ_lt
-      push_cast at this; nlinarith
-    have := Real.log_lt_log hQpos h
-    rw [Real.log_pow] at this
-    push_cast at this
-    linarith
-  have hlogr_pos : 0 < Real.log (r + 1) := by linarith
-  -- L ≤ log n / log (r+1) ≤ 2 log n / log Q
-  have hL : (L : ℝ) * Real.log (r + 1) ≤ Real.log n := by
-    have hp : (r + 1) ^ L ≤ n := Nat.pow_log_le_self (r + 1) hn0
-    have : Real.log (((r + 1) ^ L : ℕ) : ℝ) ≤ Real.log n :=
-      Real.log_le_log (by positivity) (by exact_mod_cast hp)
-    push_cast at this
-    rwa [Real.log_pow] at this
-  have hL2 : (L : ℝ) * Real.log Q ≤ 2 * Real.log n := by nlinarith
-  -- π Q ≥ Q log 2 / log Q
-  have hpi : (Q : ℝ) * Real.log 2 / Real.log Q ≤ Nat.primeCounting Q :=
-    Chebyshev.pi_ge_of_four_le (by omega)
-  -- main inequality
-  have hkey := sqrt_add_two_mul_log_le (by linarith : (28561 : ℝ) ≤ Q)
+  have hR16 := Rpar_ge n ε
+  have hcand := card_candidates_ge hn0 hR16
+  set L := Nat.log (Rpar n ε + 1) n with hLdef
+  have hfl := Nat.floor_le (div_nonneg (by positivity :
+    (0 : ℝ) ≤ 3 * (Nat.log (Rpar n ε + 1) (n / 2) : ℝ)) hε0.le)
+  have hKL : (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) ≤ L := by
+    exact_mod_cast Nat.log_mono_right (Nat.div_le_self n 2)
+  have hk : (kpar n ε : ℝ) ≤ 3 * L / ε + 1 := by
+    have : 3 * (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) / ε ≤ 3 * L / ε := by gcongr
+    unfold kpar; push_cast; linarith
+  have hRR : (16 : ℝ) ≤ Rpar n ε := by exact_mod_cast hR16
   have hl2 := Real.log_two_gt_d9
-  set p := ((primeSet n Q).card : ℝ) with hpdef
-  -- p ≥ 1 + 2L/ε, multiplied out by ε log Q
-  have hmain : ε * Real.log Q * (1 + 2 * L / ε) ≤ ε * Real.log Q * p := by
-    have e1 : ε * Real.log Q * (1 + 2 * L / ε) = ε * Real.log Q + 2 * (L * Real.log Q) := by
-      field_simp
-    rw [e1]
-    -- from hcount: p ≥ π Q - (r+1) - L
-    have hp : (Nat.primeCounting Q : ℝ) - (r + 1) - L ≤ p := by
-      linarith
-    have hpi' : (Q : ℝ) * Real.log 2 ≤ Nat.primeCounting Q * Real.log Q := by
-      rwa [div_le_iff₀ hlogQpos] at hpi
-    nlinarith [mul_le_mul_of_nonneg_left hp (by positivity : 0 ≤ ε * Real.log Q),
-      mul_le_mul_of_nonneg_left hrR hlogQpos.le]
-  have hp1 : 1 + 2 * L / ε ≤ p := le_of_mul_le_mul_left hmain (by positivity)
-  have hL0 : (0 : ℝ) ≤ 2 * L / ε := by positivity
-  refine ⟨?_, ?_⟩
-  · rw [← card_pos]
-    have h0 : (0 : ℝ) < ((primeSet n Q).card : ℝ) := by rw [← hpdef]; linarith
-    exact_mod_cast h0
-  · have hK : Nat.log (r + 1) (n / 2) ≤ L := Nat.log_mono_right (Nat.div_le_self n 2)
-    have hK' : (Nat.log (r + 1) (n / 2) : ℝ) ≤ L := by exact_mod_cast hK
-    have : (L : ℝ) ≤ ε / 2 * p := by
-      have h := hp1
-      rw [← sub_le_iff_le_add', show (2 : ℝ) * L / ε = L / (ε / 2) by ring] at *
-      have h2 : L / (ε / 2) ≤ p := by linarith
-      rwa [div_le_iff₀ (by positivity), mul_comm] at h2
+  have hlog16 : 2.77 ≤ Real.log ((Rpar n ε : ℝ) + 1) := by
+    have : Real.log (16 : ℝ) ≤ Real.log ((Rpar n ε : ℝ) + 1) :=
+      Real.log_le_log (by norm_num) (by linarith)
+    rw [log_sixteen] at this
     linarith
+  have hL := log_count_le (n := n) (R := Rpar n ε) hn0
+  have hL0 : (0 : ℝ) ≤ L := by positivity
+  have hL277 : (L : ℝ) * 2.77 ≤ Real.log n := by
+    nlinarith [mul_le_mul_of_nonneg_left hlog16 hL0]
+  have hRlo := Rpar_lo n ε
+  -- with x = L/ε and y = log n / ε: L ≤ x, 2.77 x ≤ y, R ≥ 4y + 16
+  have hx : (L : ℝ) ≤ L / ε := by rw [le_div_iff₀ hε0]; nlinarith
+  have hxy : (L : ℝ) / ε * 2.77 ≤ Real.log n / ε := by
+    rw [div_mul_eq_mul_div, div_le_div_iff_of_pos_right hε0]; linarith
+  have hy0 : 0 ≤ Real.log n / ε := by
+    have : 0 ≤ Real.log n := Real.log_nonneg (by exact_mod_cast (by omega : 1 ≤ n))
+    positivity
+  have e1 : 3 * (L : ℝ) / ε = 3 * (L / ε) := by ring
+  have e2 : 4 * Real.log n / ε = 4 * (Real.log n / ε) := by ring
+  have hfinal : (kpar n ε : ℝ) ≤ (candidates n (Rpar n ε)).card := by
+    have hx0 : 0 ≤ (L : ℝ) / ε := by positivity
+    linarith
+  exact_mod_cast hfinal
 
-/-! ### The inner-set error -/
+/-! ### The prime set -/
+
+lemma primeSet_card {n : ℕ} (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
+    (primeSet n ε).card = kpar n ε := by
+  unfold primeSet
+  have hnd : ((candidates n (Rpar n ε)).sort (· ≤ ·)).Nodup := Finset.sort_nodup ..
+  rw [List.toFinset_card_of_nodup (hnd.sublist (List.take_sublist _ _)), List.length_take,
+    Finset.length_sort]
+  exact Nat.min_eq_left (kpar_le_card hn hε0 hε1)
+
+lemma mem_candidates_of_mem_primeSet {n : ℕ} {ε : ℝ} {q : ℕ} (hq : q ∈ primeSet n ε) :
+    q ∈ candidates n (Rpar n ε) := by
+  unfold primeSet at hq
+  rw [List.mem_toFinset] at hq
+  exact (Finset.mem_sort _).mp (List.mem_of_mem_take hq)
+
+lemma le_Qpar {n : ℕ} {ε : ℝ} {q : ℕ} (hq : q ∈ primeSet n ε) : q ≤ Qpar n ε :=
+  Finset.le_sup (f := id) hq
+
+lemma Qpar_le_sq (n : ℕ) (ε : ℝ) : Qpar n ε ≤ Rpar n ε ^ 2 :=
+  Finset.sup_le fun q hq => by
+    have := mem_candidates_of_mem_primeSet hq
+    simp only [candidates, mem_filter, mem_Ioc] at this
+    exact this.1.2
+
+lemma primeSet_nonempty {n : ℕ} (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
+    (primeSet n ε).Nonempty := by
+  rw [← card_pos, primeSet_card hn hε0 hε1]; unfold kpar; omega
+
+lemma Qpar_ge {n : ℕ} (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) : 17 ≤ Qpar n ε := by
+  obtain ⟨q, hq⟩ := primeSet_nonempty hn hε0 hε1
+  have h := mem_candidates_of_mem_primeSet hq
+  simp only [candidates, mem_filter, mem_Ioc] at h
+  have h16 := Rpar_ge n ε
+  have := le_Qpar hq
+  omega
+
+/-! ### The inner list -/
 
 lemma eta_le (Q : ℕ) (hQ : 1 ≤ Q) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
-    √2 * ((Real.log (4 * (Mpar (Npar Q ε) ε + 1)) + spar (Mpar (Npar Q ε) ε) ε *
-        ((ε / 8) ^ 2 / 2 + 1 / (Npar Q ε * (1 / (2 * (Q : ℝ)))) * Real.sinh (ε / 8))) /
-        (ε / 8 * spar (Mpar (Npar Q ε) ε) ε)) +
-      2 * Real.pi * Npar Q ε / Mpar (Npar Q ε) ε ≤ ε / 2 := by
-  set N := Npar Q ε
-  set M := Mpar N ε
-  set s := spar M ε
-  set t := ε / 8 with ht
+    (Real.log (16 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) + spar (Mpar (Npar Q ε) ε) ε *
+        ((5 * ε / 8) ^ 2 / 2 + 1 / (Npar Q ε * (1 / (2 * (Q : ℝ)))) * Real.sinh (5 * ε / 8))) /
+        (5 * ε / 8 * spar (Mpar (Npar Q ε) ε) ε) / Real.cos (Real.pi / 16) +
+      2 * Real.pi * Npar Q ε / Mpar (Npar Q ε) ε ≤ 2 * ε / 3 := by
   have hQR : (1 : ℝ) ≤ Q := by exact_mod_cast hQ
-  have hN : 48 * (Q : ℝ) / ε ≤ N := Nat.le_ceil _
+  have hN : 300 * (Q : ℝ) / ε ≤ Npar Q ε := Nat.le_ceil _
+  have hM : 1000 * (Npar Q ε : ℝ) / ε ≤ Mpar (Npar Q ε) ε := Nat.le_ceil _
+  have hs : 2 * Real.log (16 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) / (5 * ε / 8) ^ 2 ≤
+      spar (Mpar (Npar Q ε) ε) ε := Nat.le_ceil _
+  generalize spar (Mpar (Npar Q ε) ε) ε = s at *
+  generalize Mpar (Npar Q ε) ε = M at *
+  generalize Npar Q ε = N at *
+  set t := 5 * ε / 8 with ht
   have hNpos : (0 : ℝ) < N := lt_of_lt_of_le (by positivity) hN
-  have hM : 51 * (N : ℝ) / ε ≤ M := Nat.le_ceil _
   have hMpos : (0 : ℝ) < M := lt_of_lt_of_le (by positivity) hM
-  have hlogM : 0 < Real.log (4 * (M + 1)) := Real.log_pos (by linarith)
-  have hs : 128 * Real.log (4 * (M + 1)) / ε ^ 2 ≤ s := Nat.le_ceil _
-  have hspos : (0 : ℝ) < s := lt_of_lt_of_le (by positivity) hs
+  have hlog : 0 < Real.log (16 * ((M : ℝ) + 1)) := Real.log_pos (by linarith)
   have htpos : 0 < t := by positivity
-  -- three pieces
-  have hsplit : (Real.log (4 * (M + 1)) + s * (t ^ 2 / 2 + 1 / (N * (1 / (2 * (Q : ℝ)))) *
-      Real.sinh t)) / (t * s) =
-      Real.log (4 * (M + 1)) / (t * s) + t / 2 + 2 * Q / N * (Real.sinh t / t) := by
+  have hspos : (0 : ℝ) < s := lt_of_lt_of_le (by positivity) hs
+  have ht1 : t ≤ 1 := by rw [ht]; linarith
+  have hsplit : (Real.log (16 * ((M : ℝ) + 1)) + s * (t ^ 2 / 2 +
+      1 / (N * (1 / (2 * (Q : ℝ)))) * Real.sinh t)) / (t * s) =
+      Real.log (16 * ((M : ℝ) + 1)) / (t * s) + t / 2 + 2 * Q / N * (Real.sinh t / t) := by
     field_simp
     ring
-  have h1 : Real.log (4 * (M + 1)) / (t * s) ≤ ε / 16 := by
-    rw [div_le_iff₀ (by positivity), ht]
+  have h1 : Real.log (16 * ((M : ℝ) + 1)) / (t * s) ≤ t / 2 := by
+    rw [div_le_iff₀ (by positivity)]
     rw [div_le_iff₀ (by positivity)] at hs
     nlinarith
+  have hsinh0 : 0 ≤ Real.sinh t / t := div_nonneg (Real.sinh_nonneg_iff.mpr htpos.le) htpos.le
   have hsinh : Real.sinh t / t ≤ 3 / 2 := by
-    rw [div_le_iff₀ htpos]
-    exact sinh_le_three_halves htpos.le (by rw [ht]; linarith)
-  have h3 : 2 * (Q : ℝ) / N * (Real.sinh t / t) ≤ ε / 16 := by
-    have hQN : 2 * (Q : ℝ) / N ≤ ε / 24 := by
+    rw [div_le_iff₀ htpos]; exact sinh_le_three_halves htpos.le ht1
+  have h3 : 2 * (Q : ℝ) / N * (Real.sinh t / t) ≤ ε / 100 := by
+    have hQN : 2 * (Q : ℝ) / N ≤ ε / 150 := by
       rw [div_le_iff₀ hNpos]
       rw [div_le_iff₀ hε0] at hN
       nlinarith
-    calc 2 * (Q : ℝ) / N * (Real.sinh t / t) ≤ ε / 24 * (3 / 2) := by
-          gcongr
-      _ = ε / 16 := by ring
-  have h4 : 2 * Real.pi * N / M ≤ 2 * 3.15 * ε / 51 := by
+    calc 2 * (Q : ℝ) / N * (Real.sinh t / t) ≤ ε / 150 * (3 / 2) := by gcongr
+      _ = ε / 100 := by ring
+  have hpi : Real.pi < 63 / 20 := by have := Real.pi_lt_d2; norm_num at this; linarith
+  have hcos : (49 / 50 : ℝ) ≤ Real.cos (Real.pi / 16) := by
+    have h := Real.one_sub_sq_div_two_le_cos (x := Real.pi / 16)
+    have hpi0 := Real.pi_pos
+    nlinarith
+  have h4 : 2 * Real.pi * N / M ≤ 2 * (63 / 20) * ε / 1000 := by
     rw [div_le_iff₀ hMpos]
     rw [div_le_iff₀ hε0] at hM
-    have := Real.pi_lt_d2
     nlinarith
-  have hsqrt2 : √2 ≤ 1.415 := by
-    rw [Real.sqrt_le_left (by norm_num)]; norm_num
   rw [hsplit]
-  have hsum : Real.log (4 * (M + 1)) / (t * s) + t / 2 + 2 * Q / N * (Real.sinh t / t) ≤
-      3 * ε / 16 := by
-    rw [ht] at h1 h3 ⊢; linarith
-  have hsum0 : 0 ≤ Real.log (4 * (M + 1)) / (t * s) + t / 2 + 2 * Q / N * (Real.sinh t / t) := by
-    have : 0 ≤ Real.sinh t / t := div_nonneg (Real.sinh_nonneg_iff.mpr htpos.le) htpos.le
-    positivity
-  calc √2 * (Real.log (4 * (M + 1)) / (t * s) + t / 2 + 2 * Q / N * (Real.sinh t / t)) +
-        2 * Real.pi * N / M ≤ 1.415 * (3 * ε / 16) + 2 * 3.15 * ε / 51 := by
+  have hA : Real.log (16 * ((M : ℝ) + 1)) / (t * s) + t / 2 + 2 * Q / N * (Real.sinh t / t) ≤
+      5 * ε / 8 + ε / 100 := by
+    linarith
+  calc (Real.log (16 * ((M : ℝ) + 1)) / (t * s) + t / 2 + 2 * Q / N * (Real.sinh t / t)) /
+        Real.cos (Real.pi / 16) + 2 * Real.pi * N / M
+      ≤ (5 * ε / 8 + ε / 100) / (49 / 50) + 2 * (63 / 20) * ε / 1000 := by
         gcongr
-    _ ≤ ε / 2 := by nlinarith
+    _ ≤ 2 * ε / 3 := by linarith
 
-/-! ### Main theorems -/
-
-/-- The inner set chosen for a given `Q` is `ε/2`-balanced on `1/(2Q) ≤ |β| ≤ 1/2`. -/
+/-- The inner list for a given `Q` is `2ε/3`-balanced on `1/(2Q) ≤ |β| ≤ 1/2`. -/
 lemma inner_good (Q : ℕ) (hQ : 1 ≤ Q) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) (β : ℝ)
     (hβ1 : 1 / (2 * (Q : ℝ)) ≤ |β|) (hβ2 : |β| ≤ 1 / 2) :
-    ‖innerSum (listInner (greedyList (Npar Q ε) (Mpar (Npar Q ε) ε) (1 / (2 * (Q : ℝ))) (ε / 8)
-      (spar (Mpar (Npar Q ε) ε) ε))) β‖ ≤ ε / 2 := by
+    ‖innerSum (listInner (greedyList 16 (Npar Q ε) (Mpar (Npar Q ε) ε) (1 / (2 * (Q : ℝ)))
+      (5 * ε / 8) (spar (Mpar (Npar Q ε) ε) ε))) β‖ ≤ 2 * ε / 3 := by
   have hQR : (1 : ℝ) ≤ Q := by exact_mod_cast hQ
-  have hNb : 48 * (Q : ℝ) / ε ≤ Npar Q ε := Nat.le_ceil _
-  have hMb : 51 * (Npar Q ε : ℝ) / ε ≤ Mpar (Npar Q ε) ε := Nat.le_ceil _
-  have hsb : 128 * Real.log (4 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) / ε ^ 2 ≤
+  have hNb : 300 * (Q : ℝ) / ε ≤ Npar Q ε := Nat.le_ceil _
+  have hMb : 1000 * (Npar Q ε : ℝ) / ε ≤ Mpar (Npar Q ε) ε := Nat.le_ceil _
+  have hsb : 2 * Real.log (16 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) / (5 * ε / 8) ^ 2 ≤
       spar (Mpar (Npar Q ε) ε) ε := Nat.le_ceil _
   have hNR : (0 : ℝ) < Npar Q ε := lt_of_lt_of_le (by positivity) hNb
   have hMR : (0 : ℝ) < Mpar (Npar Q ε) ε := lt_of_lt_of_le (by positivity) hMb
-  have hlog : 0 < Real.log (4 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) := Real.log_pos (by linarith)
+  have hlog : 0 < Real.log (16 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) := Real.log_pos (by linarith)
   have hsR : (0 : ℝ) < spar (Mpar (Npar Q ε) ε) ε := lt_of_lt_of_le (by positivity) hsb
   have hN : 0 < Npar Q ε := by exact_mod_cast hNR
   have hM : 0 < Mpar (Npar Q ε) ε := by exact_mod_cast hMR
@@ -281,160 +356,173 @@ lemma inner_good (Q : ℕ) (hQ : 1 ≤ Q) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε 
     rw [mul_one_div, le_div_iff₀ (by positivity)]
     rw [div_le_iff₀ hε0] at hMb hNb
     nlinarith
-  exact (greedy_inner_bound (Npar Q ε) (Mpar (Npar Q ε) ε) (1 / (2 * (Q : ℝ))) (ε / 8) hN hM
-    (by positivity) hMδ (by positivity) _ hs β hβ1 hβ2).trans (eta_le Q hQ hε0 hε1)
+  have h := greedy_inner_bound 16 (Npar Q ε) (Mpar (Npar Q ε) ε) (1 / (2 * (Q : ℝ))) (5 * ε / 8)
+    (by norm_num) hN hM (by positivity) hMδ (by positivity) _ hs β hβ1 hβ2
+  simp only [Nat.cast_ofNat] at h
+  exact h.trans (eta_le Q hQ hε0 hε1)
+
+/-! ### Main theorems -/
 
 /-- **Main theorem (bias).** -/
 theorem main_bias (n : ℕ) [NeZero n] (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1)
     (ℓ : ZMod n) (hℓ : ℓ ≠ 0) : ‖expSum (indexSet n ε) (element n ε) ℓ‖ ≤ ε := by
-  obtain ⟨hPne, hK⟩ := primeSet_good n hn hε0 hε1
-  have hQ0 : 32768 ≤ Qpar n ε := Nat.le_add_left _ _
-  have hr : 1 ≤ Nat.sqrt (Qpar n ε) := Nat.le_sqrt.mpr (by omega)
-  have hP : ∀ q ∈ primeSet n (Qpar n ε),
-      q.Prime ∧ Nat.sqrt (Qpar n ε) < q ∧ q ≤ Qpar n ε ∧ q.Coprime n := by
+  have hcard := primeSet_card hn hε0 hε1
+  have hQ := Qpar_ge hn hε0 hε1
+  have hR16 := Rpar_ge n ε
+  have hP : ∀ q ∈ primeSet n ε, q.Prime ∧ Rpar n ε < q ∧ q ≤ Qpar n ε ∧ q.Coprime n := by
     intro q hq
-    simp only [primeSet, mem_filter, mem_Ioc] at hq
-    exact ⟨hq.2.1, hq.1.1, hq.1.2, hq.2.2⟩
-  have hcore := core_bias_bound (n := n) (m := Nat.sqrt (Qpar n ε)) (Q := Qpar n ε) hr
-    (primeSet n (Qpar n ε)) hP hPne (listInner (innerList n ε)) (η := ε / 2) (by positivity)
+    have h := mem_candidates_of_mem_primeSet hq
+    simp only [candidates, mem_filter, mem_Ioc] at h
+    exact ⟨h.2.1, h.1.1, le_Qpar hq, h.2.2⟩
+  have hcore := core_bias_bound (n := n) (m := Rpar n ε) (Q := Qpar n ε) (by omega)
+    (primeSet n ε) hP (primeSet_nonempty hn hε0 hε1) (listInner (innerList n ε))
+    (η := 2 * ε / 3) (by positivity)
     (fun β h1 h2 => inner_good (Qpar n ε) (by omega) hε0 hε1 β h1 h2) ℓ hℓ
-  have hPc : (0 : ℝ) < (primeSet n (Qpar n ε)).card := by exact_mod_cast hPne.card_pos
-  have hdiv : (Nat.log (Nat.sqrt (Qpar n ε) + 1) (n / 2) : ℝ) / (primeSet n (Qpar n ε)).card ≤
-      ε / 2 := by
-    rw [div_le_iff₀ hPc]; linarith
+  have hk : 3 * (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) / ε < kpar n ε := by
+    unfold kpar; push_cast; exact Nat.lt_floor_add_one _
+  have hkpos : (0 : ℝ) < kpar n ε := by unfold kpar; positivity
+  have hdiv : (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) / (primeSet n ε).card ≤ ε / 3 := by
+    rw [hcard, div_le_iff₀ hkpos]
+    rw [div_lt_iff₀ hε0] at hk
+    linarith
   calc ‖expSum (indexSet n ε) (element n ε) ℓ‖
-      = ‖expSum (primeSet n (Qpar n ε) ×ˢ univ) (fracSet (listInner (innerList n ε))) ℓ‖ := rfl
-    _ ≤ _ := hcore
+      = ‖expSum (primeSet n ε ×ˢ univ) (fracSet (listInner (innerList n ε))) ℓ‖ := rfl
+    _ ≤ (Nat.log (Rpar n ε + 1) (n / 2) : ℝ) / (primeSet n ε).card + 2 * ε / 3 := hcore
     _ ≤ ε := by linarith
 
-/-- **Main theorem (size).** `|S| ≤ 1625 · (20 log n / ε + 32769) / ε²`. -/
-theorem main_size (n : ℕ) (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
-    ((indexSet n ε).card : ℝ) ≤ 1625 * (20 * Real.log n / ε + 32769) / ε ^ 2 := by
-  have hQ0 : 32768 ≤ Qpar n ε := Nat.le_add_left _ _
-  have hlogn : Real.log 2 ≤ Real.log n := Real.log_le_log (by norm_num) (by exact_mod_cast hn)
+/-- **Main theorem (size, exact).** `|S| = k · s`. -/
+theorem main_size_exact (n : ℕ) (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
+    (indexSet n ε).card = kpar n ε * spar (Mpar (Npar (Qpar n ε) ε) ε) ε := by
+  rw [indexSet, card_product, card_univ, Fintype.card_fin, innerList, greedyList_length,
+    primeSet_card hn hε0 hε1]
+
+/-- The arithmetic behind the size bound, with all parameters as plain variables. -/
+lemma size_arith {n k s M N Q R : ℕ} {ε : ℝ} (hn : 2 ≤ n) (hε0 : 0 < ε) (hε1 : ε ≤ 1)
+    (hQ17 : 17 ≤ Q) (hQR2 : Q ≤ R ^ 2) (hR16 : 16 ≤ R)
+    (hRlo : 4 * Real.log n / ε + 16 ≤ R) (hRhi : (R : ℝ) ≤ 4 * Real.log n / ε + 17)
+    (hk : (k : ℝ) ≤ 3 * Real.log n / (ε * Real.log R) + 1)
+    (hNle : (N : ℝ) ≤ 300 * Q / ε + 1) (hMle : (M : ℝ) ≤ 1000 * N / ε + 1)
+    (hsle : (s : ℝ) ≤ 2 * Real.log (16 * ((M : ℝ) + 1)) / (5 * ε / 8) ^ 2 + 1) :
+    (k : ℝ) * s ≤ 235 * (Real.log n + 2) / ε ^ 3 := by
   have hl2 := Real.log_two_gt_d9
-  have hl2' := Real.log_two_lt_d9
-  have hQup : (Qpar n ε : ℝ) ≤ 20 * Real.log n / ε + 32769 := by
-    have h := Nat.ceil_lt_add_one (show 0 ≤ 20 * Real.log n / ε by positivity)
-    unfold Qpar; push_cast; linarith
-  have hQlo : 20 * Real.log n / ε ≤ (Qpar n ε : ℝ) := by
-    have := Nat.le_ceil (20 * Real.log n / ε)
-    unfold Qpar; push_cast; linarith
-  have hcardS : (indexSet n ε).card =
-      (primeSet n (Qpar n ε)).card * spar (Mpar (Npar (Qpar n ε) ε) ε) ε := by
-    rw [indexSet, card_product, card_univ, Fintype.card_fin, innerList, greedyList_length]
-  rw [hcardS]
-  generalize Qpar n ε = Q at *
-  have hQR : (32768 : ℝ) ≤ Q := by exact_mod_cast hQ0
-  have hQpos : (0 : ℝ) < Q := by linarith
-  have hinvε : 1 / ε ≤ Q := by
-    have : 1 / ε ≤ 20 * Real.log n / ε := by
+  have hlogn2 : Real.log 2 ≤ Real.log n := Real.log_le_log (by norm_num) (by exact_mod_cast hn)
+  have hlogn0 : 0 ≤ Real.log n := by linarith
+  have hRR : (16 : ℝ) ≤ R := by exact_mod_cast hR16
+  have hlogR16 : 4 * Real.log 2 ≤ Real.log R := by
+    rw [← log_sixteen]; exact Real.log_le_log (by norm_num) hRR
+  have hlogRpos : 0 < Real.log R := by linarith
+  have hQR' : (Q : ℝ) ≤ (R : ℝ) ^ 2 := by exact_mod_cast hQR2
+  have hQ17' : (17 : ℝ) ≤ Q := by exact_mod_cast hQ17
+  have hε2 : 0 < ε ^ 2 := by positivity
+  have hε21 : ε ^ 2 ≤ 1 := pow_le_one₀ hε0.le hε1
+  have hinvε : 1 / ε ≤ R := by
+    have : 1 / ε ≤ 4 * Real.log n / ε := by
       rw [div_le_div_iff_of_pos_right hε0]; linarith
     linarith
-  have hNle : (Npar Q ε : ℝ) ≤ 48 * Q / ε + 1 := (Nat.ceil_lt_add_one (by positivity)).le
-  have hMle : (Mpar (Npar Q ε) ε : ℝ) ≤ 51 * (Npar Q ε) / ε + 1 :=
-    (Nat.ceil_lt_add_one (by positivity)).le
-  have hsle : (spar (Mpar (Npar Q ε) ε) ε : ℝ) ≤
-      128 * Real.log (4 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) / ε ^ 2 + 1 :=
-    (Nat.ceil_lt_add_one (by
-      have : 0 ≤ Real.log (4 * ((Mpar (Npar Q ε) ε : ℝ) + 1)) := Real.log_nonneg (by
-        have : (0 : ℝ) ≤ Mpar (Npar Q ε) ε := by positivity
-        linarith)
-      positivity)).le
-  generalize spar (Mpar (Npar Q ε) ε) ε = s at *
-  generalize Mpar (Npar Q ε) ε = M at *
-  generalize Npar Q ε = N at *
-  -- |P| ≤ π Q ≤ 2 log 4 · Q / log Q + √Q
-  have hlogQ : 0 < Real.log Q := Real.log_pos (by linarith)
-  have hP : ((primeSet n Q).card : ℝ) ≤ 2 * Real.log 4 * Q / Real.log Q + √(Q : ℝ) := by
-    have hsub : primeSet n Q ⊆ Nat.primesLE Q := by
-      intro q hq
-      simp only [primeSet, mem_filter, mem_Ioc] at hq
-      exact Nat.mem_primesLE.mpr ⟨hq.1.2, hq.2.1⟩
-    have h1 : ((primeSet n Q).card : ℝ) ≤ Nat.primeCounting Q := by
-      have := card_le_card hsub
-      rw [Nat.primesLE_card_eq_primeCounting] at this
-      exact_mod_cast this
-    have h2 := Chebyshev.pi_le_log4_mul_div (x := (Q : ℝ)) (by linarith)
-    rw [Nat.floor_natCast, Real.log_sqrt hQpos.le] at h2
-    calc ((primeSet n Q).card : ℝ) ≤ Nat.primeCounting Q := h1
-      _ ≤ Real.log 4 * Q / (Real.log Q / 2) + √(Q : ℝ) := h2
-      _ = 2 * Real.log 4 * Q / Real.log Q + √(Q : ℝ) := by field_simp
-  -- s ≤ 513 log Q / ε²
-  have hs : (s : ℝ) ≤ 513 * Real.log Q / ε ^ 2 := by
-    have hεQ : 1 ≤ ε * Q := by rwa [div_le_iff₀ hε0, mul_comm] at hinvε
-    have hM4 : 4 * ((M : ℝ) + 1) ≤ (Q : ℝ) ^ 4 := by
-      have hNQ : (N : ℝ) ≤ 49 * Q / ε := by
-        have : (1 : ℝ) ≤ Q / ε := by rw [le_div_iff₀ hε0]; nlinarith
-        calc (N : ℝ) ≤ 48 * Q / ε + 1 := hNle
-          _ ≤ 48 * Q / ε + Q / ε := by linarith
-          _ = 49 * Q / ε := by ring
-      have hMQ : (M : ℝ) + 1 ≤ 2501 * Q / ε ^ 2 := by
-        have hq1 : (1 : ℝ) ≤ Q / ε ^ 2 := by
-          rw [le_div_iff₀ (by positivity)]; nlinarith
-        calc (M : ℝ) + 1 ≤ 51 * N / ε + 2 := by linarith
-          _ ≤ 51 * (49 * Q / ε) / ε + 2 := by gcongr
-          _ = 2499 * (Q / ε ^ 2) + 2 := by ring
-          _ ≤ 2501 * (Q / ε ^ 2) := by linarith
-          _ = 2501 * Q / ε ^ 2 := by ring
-      have hεinv2 : 1 / ε ^ 2 ≤ (Q : ℝ) ^ 2 := by
-        rw [one_div, ← inv_pow]
+  -- M + 1 ≤ 301002 Q/ε²
+  have hQe : 1 ≤ (Q : ℝ) / ε ^ 2 := by rw [le_div_iff₀ hε2]; linarith
+  have hQe' : 1 / ε ≤ (Q : ℝ) / ε ^ 2 := by
+    rw [div_le_div_iff₀ hε0 hε2, one_mul]
+    nlinarith [mul_le_mul_of_nonneg_left hε1 hε0.le, mul_le_mul_of_nonneg_right hQ17' hε0.le]
+  have hN' : 1000 * (N : ℝ) / ε ≤ 1000 * (300 * Q / ε + 1) / ε := by gcongr
+  have e1 : 1000 * (300 * (Q : ℝ) / ε + 1) / ε = 300000 * (Q / ε ^ 2) + 1000 * (1 / ε) := by
+    field_simp; ring
+  have hM1 : (M : ℝ) + 1 ≤ 301002 * ((Q : ℝ) / ε ^ 2) := by linarith
+  -- Q/ε² ≤ R⁴, hence 16(M+1) ≤ R¹⁰
+  have hu : (Q : ℝ) / ε ^ 2 ≤ (R : ℝ) ^ 4 := by
+    have h1 : 1 / ε ^ 2 ≤ (R : ℝ) ^ 2 := by
+      rw [show 1 / ε ^ 2 = (1 / ε) ^ 2 by ring]
+      gcongr
+    calc (Q : ℝ) / ε ^ 2 = (Q : ℝ) * (1 / ε ^ 2) := by ring
+      _ ≤ (R : ℝ) ^ 2 * (R : ℝ) ^ 2 := by gcongr
+      _ = (R : ℝ) ^ 4 := by ring
+  have hR4 : (0 : ℝ) ≤ (R : ℝ) ^ 4 := by positivity
+  have hR6 : (2 : ℝ) ^ 23 ≤ (R : ℝ) ^ 6 := by
+    calc (2 : ℝ) ^ 23 ≤ (16 : ℝ) ^ 6 := by norm_num
+      _ ≤ (R : ℝ) ^ 6 := by gcongr
+  have h16M : 16 * ((M : ℝ) + 1) ≤ (R : ℝ) ^ 10 := by
+    calc 16 * ((M : ℝ) + 1) ≤ 4816032 * (R : ℝ) ^ 4 := by linarith
+      _ ≤ (2 : ℝ) ^ 23 * (R : ℝ) ^ 4 := by
+          have : (4816032 : ℝ) ≤ 2 ^ 23 := by norm_num
+          exact mul_le_mul_of_nonneg_right this hR4
+      _ ≤ (R : ℝ) ^ 6 * (R : ℝ) ^ 4 := by gcongr
+      _ = (R : ℝ) ^ 10 := by ring
+  have hlogM : Real.log (16 * ((M : ℝ) + 1)) ≤ 10 * Real.log R := by
+    have := Real.log_le_log (by positivity) h16M
+    rw [Real.log_pow] at this
+    push_cast at this
+    exact this
+  -- s ≤ 52 log R / ε²
+  have hs' : (s : ℝ) ≤ 52 * Real.log R / ε ^ 2 := by
+    have e2 : 2 * Real.log (16 * ((M : ℝ) + 1)) / (5 * ε / 8) ^ 2 =
+        128 / 25 * (Real.log (16 * ((M : ℝ) + 1)) / ε ^ 2) := by
+      field_simp; ring
+    have h2 : Real.log (16 * ((M : ℝ) + 1)) / ε ^ 2 ≤ 10 * (Real.log R / ε ^ 2) := by
+      rw [← mul_div_assoc]; gcongr
+    have h3 : 1 ≤ 4 / 5 * (Real.log R / ε ^ 2) := by
+      have : Real.log R ≤ Real.log R / ε ^ 2 := by
+        rw [le_div_iff₀ hε2]
+        nlinarith [mul_le_mul_of_nonneg_left hε21 hlogRpos.le]
+      linarith
+    calc (s : ℝ) ≤ 2 * Real.log (16 * ((M : ℝ) + 1)) / (5 * ε / 8) ^ 2 + 1 := hsle
+      _ = 128 / 25 * (Real.log (16 * ((M : ℝ) + 1)) / ε ^ 2) + 1 := by rw [e2]
+      _ ≤ 128 / 25 * (10 * (Real.log R / ε ^ 2)) + 4 / 5 * (Real.log R / ε ^ 2) := by
+          linarith
+      _ = 52 * Real.log R / ε ^ 2 := by ring
+  -- k s ≤ 52 (3 log n / ε + log R) / ε²
+  have hk' : (k : ℝ) ≤ (3 * Real.log n / ε + Real.log R) / Real.log R := by
+    calc (k : ℝ) ≤ 3 * Real.log n / (ε * Real.log R) + 1 := hk
+      _ = (3 * Real.log n / ε + Real.log R) / Real.log R := by field_simp
+  have hks : (k : ℝ) * s ≤ 52 * (3 * Real.log n / ε + Real.log R) / ε ^ 2 := by
+    have hb0 : 0 ≤ (3 * Real.log n / ε + Real.log R) / Real.log R := by positivity
+    calc (k : ℝ) * s ≤ ((3 * Real.log n / ε + Real.log R) / Real.log R) *
+          (52 * Real.log R / ε ^ 2) := by
+          gcongr
+      _ = 52 * (3 * Real.log n / ε + Real.log R) / ε ^ 2 := by field_simp
+  -- log R ≤ R / e ≤ (4 log n / ε + 17) / (27/10)
+  have he' : (27 / 10 : ℝ) ≤ Real.exp 1 := by
+    have he := Real.exp_one_gt_d9
+    norm_num at he ⊢; linarith
+  have hlogR : Real.log R ≤ (4 * Real.log n / ε + 17) / (27 / 10) := by
+    calc Real.log R ≤ (R : ℝ) / Real.exp 1 := log_le_div_exp_one (by linarith)
+      _ ≤ (R : ℝ) / (27 / 10) := by gcongr
+      _ ≤ (4 * Real.log n / ε + 17) / (27 / 10) := by gcongr
+  calc (k : ℝ) * s ≤ 52 * (3 * Real.log n / ε + Real.log R) / ε ^ 2 := hks
+    _ ≤ 52 * (3 * Real.log n / ε + (4 * Real.log n / ε + 17) / (27 / 10)) / ε ^ 2 := by
         gcongr
-        rw [inv_eq_one_div]; exact hinvε
-      calc 4 * ((M : ℝ) + 1) ≤ 4 * (2501 * Q / ε ^ 2) := by gcongr
-        _ = 10004 * Q * (1 / ε ^ 2) := by ring
-        _ ≤ 10004 * Q * Q ^ 2 := by gcongr
-        _ ≤ Q * Q * Q ^ 2 := by gcongr; nlinarith
-        _ = (Q : ℝ) ^ 4 := by ring
-    have hlogM : Real.log (4 * ((M : ℝ) + 1)) ≤ 4 * Real.log Q := by
-      have := Real.log_le_log (by positivity) hM4
-      rwa [Real.log_pow] at this
-    have hone : (1 : ℝ) ≤ Real.log Q / ε ^ 2 := by
-      rw [le_div_iff₀ (by positivity)]
-      have : 10 ≤ Real.log Q := by
-        have h := Real.log_le_log (by norm_num) hQR
-        have h' : Real.log (32768 : ℝ) = 15 * Real.log 2 := by
-          rw [show (32768 : ℝ) = 2 ^ 15 by norm_num, Real.log_pow]; push_cast; ring
+    _ = (52 * (3 + 40 / 27) * Real.log n + 52 * 170 / 27 * ε) / ε ^ 3 := by
+        field_simp; ring
+    _ ≤ 235 * (Real.log n + 2) / ε ^ 3 := by
+        rw [div_le_div_iff_of_pos_right (by positivity)]
         linarith
-      nlinarith
-    calc (s : ℝ) ≤ 128 * Real.log (4 * ((M : ℝ) + 1)) / ε ^ 2 + 1 := hsle
-      _ ≤ 128 * (4 * Real.log Q) / ε ^ 2 + Real.log Q / ε ^ 2 := by gcongr
-      _ = 513 * Real.log Q / ε ^ 2 := by ring
-  -- combine
-  have hkey := sqrt_add_two_mul_log_le (by linarith : (28561 : ℝ) ≤ Q)
-  have hlog4 : Real.log 4 < 1.3863 := by
-    rw [show (4 : ℝ) = 2 ^ 2 by norm_num, Real.log_pow]; push_cast; linarith
-  push_cast
-  have hsQ : √(Q : ℝ) * Real.log Q ≤ 0.393 * Q := by nlinarith
-  calc ((primeSet n Q).card : ℝ) * s
-      ≤ (2 * Real.log 4 * Q / Real.log Q + √(Q : ℝ)) * (513 * Real.log Q / ε ^ 2) := by
-        gcongr
-    _ = 513 * (2 * Real.log 4 * Q + √(Q : ℝ) * Real.log Q) / ε ^ 2 := by
-        field_simp
-    _ ≤ 513 * (2 * 1.3863 * Q + 0.393 * Q) / ε ^ 2 := by gcongr
-    _ = 513 * (2 * 1.3863 + 0.393) * Q / ε ^ 2 := by ring
-    _ ≤ 1625 * Q / ε ^ 2 := by
-        gcongr
-        norm_num
-    _ ≤ 1625 * (20 * Real.log n / ε + 32769) / ε ^ 2 := by gcongr
 
-end SmallBias
+/-- **Main theorem (size).** `|S| ≤ 235 (log n + 2) / ε³`. -/
+theorem main_size (n : ℕ) (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
+    ((indexSet n ε).card : ℝ) ≤ 235 * (Real.log n + 2) / ε ^ 3 := by
+  rw [main_size_exact n hn hε0 hε1]
+  push_cast
+  apply size_arith hn hε0 hε1 (Qpar_ge hn hε0 hε1) (Qpar_le_sq n ε) (Rpar_ge n ε) (Rpar_lo n ε)
+    (Rpar_hi hn hε0) (kpar_le hn hε0) (Nat.ceil_lt_add_one (by positivity)).le
+    (Nat.ceil_lt_add_one (by positivity)).le
+  refine (Nat.ceil_lt_add_one ?_).le
+  have : 0 ≤ Real.log (16 * ((Mpar (Npar (Qpar n ε) ε) ε : ℝ) + 1)) := Real.log_nonneg (by
+    have : (0 : ℝ) ≤ Mpar (Npar (Qpar n ε) ε) ε := by positivity
+    linarith)
+  positivity
 
 /-! ### The theorem in plain terms -/
-
-namespace SmallBias
 
 /-- The explicit list of integers `k ∈ [0, n)` (with multiplicity). -/
 noncomputable def explicitList (n : ℕ) (ε : ℝ) : List ℕ :=
   (indexSet n ε).toList.map fun a => (element n ε a).val
 
-/-- **Small-bias sets in `ℤ/nℤ`, stated without any auxiliary definitions.** For `n ≥ 2` and
+/-- **Small-bias sets in `ℤ/nℤ`, stated without auxiliary definitions.** For `n ≥ 2` and
 `0 < ε ≤ 1`, the explicitly constructed list `ks = explicitList n ε` consists of integers in
-`[0, n)`, has length at most `1625 (20 log n / ε + 32769) / ε²`, and for every `0 < l < n`
-the average of `exp(2πi k l / n)` over `k ∈ ks` has absolute value at most `ε`. -/
+`[0, n)`, has length at most `235 (log n + 2) / ε³`, and for every `0 < l < n` the average of
+`exp(2πi k l / n)` over `k ∈ ks` has absolute value at most `ε`. -/
 theorem explicitList_spec (n : ℕ) (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (hε1 : ε ≤ 1) :
     (∀ k ∈ explicitList n ε, k < n) ∧
-    ((explicitList n ε).length : ℝ) ≤ 1625 * (20 * Real.log n / ε + 32769) / ε ^ 2 ∧
+    ((explicitList n ε).length : ℝ) ≤ 235 * (Real.log n + 2) / ε ^ 3 ∧
     ∀ l : ℕ, 0 < l → l < n →
       ‖((explicitList n ε).length : ℂ)⁻¹ *
         ((explicitList n ε).map fun k : ℕ =>
@@ -456,7 +544,8 @@ theorem explicitList_spec (n : ℕ) (hn : 2 ≤ n) {ε : ℝ} (hε0 : 0 < ε) (h
     have hterm : ∀ x : ZMod n, Complex.exp (2 * Real.pi * Complex.I * (x.val : ℕ) * l / n) =
         e (θ ((l : ZMod n) * x)) := by
       intro x
-      have h := e_div_eq_of_cast_eq (n := n) (a := (x.val * l : ℕ)) (b := ((l : ZMod n) * x).valMinAbs)
+      have h := e_div_eq_of_cast_eq (n := n) (a := (x.val * l : ℕ))
+        (b := ((l : ZMod n) * x).valMinAbs)
         (by push_cast; rw [ZMod.natCast_zmod_val]; ring)
       unfold θ
       rw [← h]

@@ -1,77 +1,69 @@
-"""How does the certified set size grow with n?  (sparse searched inner set vs. dense run)
+"""Set sizes for the construction of proof.md, for n = 2^r.
 
-For each n = 2^r we find the smallest |S| whose *certificate* is <= eps, over a grid of
-parameters, for two inner sets:
-  sparse: C = greedy_inner(N = 16 Q, s)         (this construction)
-  dense : C = {0, 1, ..., L-1}                   (the earlier version)
-For r <= 24 the chosen sparse sets are also checked against the exact bias (FFT).
+1. Proved sizes: the theorem's exact formula |S| = k*s (no search is run).
+2. Certified sets: smallbias.build, a practical variant that is actually run, with a rigorous
+   certificate (an upper bound on the bias of the set produced) <= eps.
+3. Exact bias: for r <= 24 the bias of the certified sets is computed exactly by FFT, and the
+   smallest sets with exact bias <= 0.2 are found.
 """
 import math, time
-import numpy as np
 import smallbias as sb
 
-Q_LIST = [64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096]
-S_LIST = [32, 48, 64, 96, 128, 192, 256, 384, 512, 768]
-L_LIST = sorted({int(round(2 ** (e / 2))) for e in range(8, 37)})        # 16 .. 2^18
-R_LIST = [16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024]
-EPS_LIST = [0.3, 0.2]
-KMAX = 64
-deltas = lambda Q: [(k - 0.5) / Q for k in range(1, KMAX + 1) if (k - 0.5) / Q <= 0.5]
+R_LIST = [16, 24, 32, 64, 128, 256, 512, 1024]
+EPS_LIST = [0.3, 0.2, 0.1]
+t_start = time.time()
 
+print("=== 1. Proved sizes (theorem, exact formula |S| = k*s) ===")
+print(f"{'r':>5} {'eps':>4} | {'k':>5} {'s':>6} {'|S|':>11} {'|S|/r':>8} | {'closed form':>11}")
+for r in R_LIST:
+    for eps in EPS_LIST:
+        f = sb.formal_parameters(1 << r, eps)
+        print(f"{r:>5} {eps:>4} | {f['k']:>5} {f['s']:>6} {f['size']:>11,} {f['size'] / r:>8,.0f} | "
+              f"{f['closed_form']:>11.3g}")
+print()
 
-def sups(profile, Q):
-    return [sb.inner_sup(profile, d) for d in deltas(Q)]
+print("=== 2. Certified sets (smallbias.build: certificate <= eps) ===")
+print(f"{'r':>5} {'eps':>4} | {'k':>4} {'Q':>6} {'s':>5} {'|S|':>8} {'|S|/r':>6} {'cert':>6} "
+      f"{'exact':>6} {'time':>5}")
+built = {}
+for r in (16, 24, 32, 48, 64, 96, 128, 192, 256):
+    for eps in (0.3, 0.2):
+        n, t0 = 1 << r, time.time()
+        res = sb.build(n, eps)
+        built[r, eps] = res
+        exact = ""
+        if r <= 24:
+            exact = f"{sb.measured_bias(sb.build_set(n, res['P'], res['C']), n):.3f}"
+        print(f"{r:>5} {eps:>4} | {res['k']:>4} {res['Q']:>6} {res['s']:>5} {res['size']:>8,} "
+              f"{res['size'] / r:>6.0f} {res['certificate']:>6.3f} {exact:>6} "
+              f"{time.time() - t0:>4.0f}s", flush=True)
+print()
 
-
-def certify_from_sups(n, Q, num_primes, sup_list):
-    best = 1.0
-    for d, g in zip(deltas(Q), sup_list):
-        F = min(1.0, sb.bad_count(n, Q, d) / num_primes)
-        best = min(best, F + (1 - F) * g)
-    return best
-
-
-t0 = time.time()
-num_primes = {Q: len(sb.primes_in(Q // 2, Q)) for Q in Q_LIST}
-sparse, inner_sets = {}, {}                       # (Q, s) -> sup list
-for Q in Q_LIST:
-    C = sb.greedy_inner(16 * Q, max(S_LIST), 1 / (2 * Q))
-    inner_sets[Q] = C
-    for s in S_LIST:
-        sparse[Q, s] = sups(sb.inner_profile(C[:s]), Q)
-    print(f"[{time.time() - t0:6.0f}s] inner sets for Q={Q} done", flush=True)
-dense = {}
-for L in L_LIST:
-    prof = sb.inner_profile(np.arange(L))
-    for Q in Q_LIST:
-        dense[Q, L] = sups(prof, Q)
-print(f"[{time.time() - t0:6.0f}s] dense profiles done\n", flush=True)
-
-for eps in EPS_LIST:
-    print(f"=== certified bias <= {eps} ===")
-    print(f"{'r':>5} | {'sparse m':>9} {'m/r':>6} {'(Q, s)':>12} | {'dense m':>9} {'m/r':>7} {'(Q, L)':>14}")
-    for r in R_LIST:
-        n = 1 << r
-        best_s = min(((num_primes[Q] * s, Q, s) for (Q, s), g in sparse.items()
-                      if certify_from_sups(n, Q, num_primes[Q], g) <= eps), default=None)
-        best_d = min(((num_primes[Q] * L, Q, L) for (Q, L), g in dense.items()
-                      if certify_from_sups(n, Q, num_primes[Q], g) <= eps), default=None)
-        fs = f"{best_s[0]:>9} {best_s[0] / r:>6.0f} {str(best_s[1:]):>12}" if best_s else f"{'-':>9} {'':>6} {'':>12}"
-        fd = f"{best_d[0]:>9} {best_d[0] / r:>7.0f} {str(best_d[1:]):>14}" if best_d else f"{'(none in grid)':>32}"
-        print(f"{r:>5} | {fs} | {fd}")
-        if best_s and r <= 24:
-            S = sb.build_set(n, best_s[1], inner_sets[best_s[1]][:best_s[2]])
-            print(f"{'':>5}   exact bias of that sparse set: {sb.measured_bias(S, n):.3f}")
-    print()
-
-print("=== smallest sparse set with EXACT bias <= 0.2 (n small enough to check by FFT) ===")
+print("=== 3. Smallest sets with EXACT bias <= 0.2 (n small enough to check by FFT) ===")
 for r in (16, 20, 24):
     n = 1 << r
-    found = None
-    for m, Q, s in sorted((num_primes[Q] * s, Q, s) for Q in Q_LIST if Q <= 1024 for s in S_LIST):
-        b = sb.measured_bias(sb.build_set(n, Q, inner_sets[Q][:s]), n)
-        if b <= 0.2:
-            found = (m, Q, s, b)
-            break
-    print(f"r={r}: m={found[0]} (Q={found[1]}, s={found[2]}, exact bias {found[3]:.3f}), m/r = {found[0] / r:.0f}")
-print(f"\n[{time.time() - t0:.0f}s total]")
+    best = None
+    for a in (0.5, 1.0, 2.0, 3.0):
+        R = math.ceil(4 * math.log(n) / 0.2) + 16
+        k = math.floor(a * sb.nat_log(R + 1, n // 2) / 0.2) + 1
+        P = sb.smallest_primes_above(R, k, n)
+        Q = P[-1]
+        g = sb.GreedyInner(16 * Q, 1 / (2 * Q), 0.12)
+        g.extend(256)
+        lo, hi = 0, 256
+        if sb.measured_bias(sb.build_set(n, P, g.C[:hi]), n) > 0.2:
+            continue
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if sb.measured_bias(sb.build_set(n, P, g.C[:mid]), n) <= 0.2:
+                hi = mid
+            else:
+                lo = mid
+        if best is None or k * hi < best[0]:
+            best = (k * hi, a, k, hi)
+    if best is None:
+        print(f"r={r}: no prefix of 256 inner elements reached exact bias 0.2")
+    else:
+        print(f"r={r}: |S|={best[0]} (a={best[1]}, k={best[2]} primes, s={best[3]}), "
+              f"|S|/r = {best[0] / r:.0f}", flush=True)
+print(f"\n[{time.time() - t_start:.0f}s total]")

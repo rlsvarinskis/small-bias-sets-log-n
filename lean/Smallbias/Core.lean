@@ -8,7 +8,8 @@ import Mathlib.Algebra.BigOperators.Associated
 `S = { c_i * q⁻¹ : q ∈ P, i < s }` where `P` is a set of primes in `(m, Q]` coprime to `n`.
 
 * `e x = exp(2πix)`, `θ y = y.valMinAbs / n ∈ [-1/2, 1/2]`.
-* `expSum T k ℓ = |T|⁻¹ ∑_{a ∈ T} e(θ(ℓ * k a))`  — the normalised character sum of the multiset `k(T)`.
+* `expSum T k ℓ = |T|⁻¹ ∑_{a ∈ T} e(θ(ℓ * k a))`, the normalised character sum of the
+  multiset `k(T)`.
 * `innerSum C β = s⁻¹ ∑_i e(C_i β)`.
 
 Main result `core_bias_bound`: if the inner set is `η`-balanced on `1/(2Q) ≤ |β| ≤ 1/2`, then every
@@ -31,7 +32,8 @@ lemma e_add (x y : ℝ) : e (x + y) = e x * e y := by
 
 lemma e_intCast (k : ℤ) : e k = 1 := by
   unfold e
-  rw [show (2 * Real.pi * Complex.I * ((k : ℝ) : ℂ)) = k * (2 * Real.pi * Complex.I) by push_cast; ring]
+  rw [show (2 * Real.pi * Complex.I * ((k : ℝ) : ℂ)) = k * (2 * Real.pi * Complex.I) by
+    push_cast; ring]
   exact Complex.exp_int_mul_two_pi_mul_I k
 
 lemma e_add_intCast (x : ℝ) (k : ℤ) : e (x + k) = e x := by
@@ -166,7 +168,8 @@ lemma dvd_of_θ_small [NeZero n] {Q q : ℕ} (hq : q ≤ Q) (hcop : q.Coprime n)
       _ < n := by linarith
   have hzero : y.valMinAbs * q - ℓ.valMinAbs = 0 := by
     apply Int.eq_zero_of_abs_lt_dvd hdvd
-    have : |((y.valMinAbs * q - ℓ.valMinAbs : ℤ) : ℝ)| = ((|y.valMinAbs * q - ℓ.valMinAbs| : ℤ) : ℝ) := by
+    have : |((y.valMinAbs * q - ℓ.valMinAbs : ℤ) : ℝ)| =
+        ((|y.valMinAbs * q - ℓ.valMinAbs| : ℤ) : ℝ) := by
       push_cast; rfl
     rw [this] at hlt
     exact_mod_cast hlt
