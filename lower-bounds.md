@@ -15,7 +15,7 @@ This file proves three limits on the bias that hold for **every** choice of coef
 | any m much smaller than n | about 1/√m | §1, energy |
 | m = n (all residues once) | 0, which is achievable | §1 |
 
-For comparison, the construction in `proof.md` reaches error 0.2 with about 30·log₂ n coefficients in practice.
+For comparison, the construction in `proof.md` reaches error 0.2 with about 20·log₂ n coefficients in practice (measured exactly for n ≤ 2²⁴).
 
 ---
 
@@ -127,4 +127,4 @@ So **log₂ n coefficients never give error below about 0.3**, for any n.
 
 - **Exactly log₂ n coefficients can't give small error.** Every choice has error at least about 0.3, and the pigeonhole argument shows the error exceeds 0.7 once m drops below log₂(n)/3.
 - **Small error needs C·log n coefficients with C growing as ε shrinks.** The energy bound alone forces m ≥ about 1/ε². The strongest known lower bound, which is not proved here, is m = Ω(log n / (ε²·log(1/ε))). It comes from Alon's rank argument for nearly orthogonal vectors.
-- **The construction is within a constant of the limit for fixed ε.** It uses about 30·log₂ n coefficients for error 0.2, against the unavoidable C·log n.
+- **The construction is within a constant of the limit for fixed ε.** It uses about 20·log₂ n coefficients for error 0.2, against the unavoidable C·log n.

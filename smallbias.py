@@ -118,8 +118,9 @@ def _powers(g, p, block=4096):
 def formal_parameters(n, eps):
     """Parameters of the theorem (proof.md, lean/Smallbias/Main.lean) and the proved size k*s.
 
-    Up to floating-point rounding in the ceilings, these are exactly Rpar, kpar, primeSet, Qpar,
-    Npar, Mpar, spar of the Lean development; |S| = k*s is `main_size_exact`.
+    Up to floating-point rounding in the ceilings, these are exactly Rpar, numPrimes, primes, Pmax,
+    Npar, Mpar, spar of the Lean development (here k = |P| and Q = P_max); |S| = k*s is
+    `main_size_exact`.
     """
     R = math.ceil(4 * math.log(n) / eps) + 16
     K = nat_log(R + 1, n // 2)
